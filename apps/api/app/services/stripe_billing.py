@@ -955,6 +955,12 @@ def _sync_stripe_subscription(
     )
     if is_founding:
         supabase_db.mark_founding_profile(user_id, PLAN_PRICES_USD[PlanId.FOUNDING.value])
+    supabase_db.sync_sentinel_privacy_from_ced_plan(
+        user_id,
+        plan_id,
+        status=status,
+        period_end=_period_end_iso(sub.get("current_period_end")),
+    )
 
 
 def _handle_subscription_updated(subscription: dict[str, Any], event_id: str) -> None:
@@ -1009,6 +1015,12 @@ def _handle_subscription_updated(subscription: dict[str, Any], event_id: str) ->
         amount_usd=float(PLAN_PRICES_USD.get(plan_id, 0)),
         stripe_event_id=event_id,
         metadata={"subscription_id": subscription.get("id"), "status": status},
+    )
+    supabase_db.sync_sentinel_privacy_from_ced_plan(
+        str(user_id),
+        plan_id,
+        status=status,
+        period_end=_period_end_iso(subscription.get("current_period_end")),
     )
 
 

@@ -180,6 +180,7 @@ export const PUBLIC_PLANS = [
     label: "CED Élite",
     priceUsd: 99,
     highlights: [
+      "Sentinel Privacy incluido (40 sellos verificables / mes)",
       "Modo avanzado (análisis profundo con Claude)",
       "Modo de prospección",
       "Mapa y navegación",
@@ -198,6 +199,7 @@ export const PUBLIC_PLANS = [
     label: "CED Founding",
     priceUsd: 149,
     highlights: [
+      "Sentinel Privacy incluido (150 sellos verificables / mes)",
       "Precio bloqueado por 6 meses",
       "Cupos limitados",
       "Modo avanzado (análisis profundo con Claude)",

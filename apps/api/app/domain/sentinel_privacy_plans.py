@@ -32,6 +32,22 @@ SENTINEL_PLAN_LABELS: dict[str, str] = {
 
 STRIPE_SENTINEL_CHECKOUT_PLANS = frozenset(SENTINEL_PLAN_PRICES_USD.keys())
 
+# Incluido en suscripción CED (un solo checkout — no hace falta SKU aparte).
+CED_PLANS_WITH_SENTINEL_BUNDLE = frozenset({"elite", "founding"})
+CED_SENTINEL_SEALS_BUNDLE: dict[str, int] = {
+    "elite": SENTINEL_SEALS_PER_MONTH[SentinelPlanId.PRO.value],
+    "founding": SENTINEL_SEALS_PER_MONTH[SentinelPlanId.BUSINESS.value],
+}
+CED_TO_SENTINEL_STORAGE_PLAN: dict[str, str] = {
+    "elite": SentinelPlanId.PRO.value,
+    "founding": SentinelPlanId.BUSINESS.value,
+}
+
+
+def ced_plan_includes_sentinel_bundle(ced_plan_id: str | None) -> bool:
+    pid = (ced_plan_id or "").strip().lower()
+    return pid in CED_PLANS_WITH_SENTINEL_BUNDLE
+
 
 def is_sentinel_privacy_plan(plan_id: str | None) -> bool:
     pid = (plan_id or "").strip().lower()

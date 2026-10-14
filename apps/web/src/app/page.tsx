@@ -45,13 +45,15 @@ const PLAN_STYLES: Record<
     badgeClass: "bg-cyan-500/20 text-cyan-300",
   },
   elite: {
-    border: "border-cyan-500/40",
-    glow: "hover:border-cyan-400/65",
+    border: "border-violet-400/45",
+    glow: "hover:border-violet-300/70 hover:shadow-[0_0_24px_rgba(120,80,255,0.15)]",
+    badge: "+ SENTINEL PRIVACY",
+    badgeClass: "bg-violet-500/25 text-violet-200",
   },
   founding: {
     border: "border-amber-400/55",
     glow: "hover:border-amber-300/80 hover:shadow-[0_0_28px_rgba(251,191,36,0.18)]",
-    badge: "LIMITED · 50 CUPOS",
+    badge: "PRIVACY + 50 CUPOS",
     badgeClass: "bg-amber-500/20 text-amber-300",
   },
 };
@@ -126,6 +128,47 @@ export default function HomePage() {
             </span>
             Ver detalles de planes
           </a>
+        </div>
+      </section>
+
+      <section
+        aria-label="Sentinel Privacy"
+        className="relative z-10 mx-auto max-w-6xl px-4 pb-4 sm:px-6"
+      >
+        <div className="rounded-xl border border-violet-500/35 bg-gradient-to-br from-violet-950/40 to-black/50 p-6 sm:p-8">
+          <p className="font-[family-name:var(--font-orbitron)] text-[10px] tracking-[0.28em] text-violet-300">
+            MÓDULO SENTINEL PRIVACY
+          </p>
+          <h2 className="mt-2 font-[family-name:var(--font-orbitron)] text-lg text-white sm:text-xl">
+            Privacidad verificable incluida — un solo plan, todo CED + sellos
+          </h2>
+          <p className="mt-3 max-w-3xl text-sm leading-relaxed text-cyan-100/80">
+            Hash y fecha en cadena; el PDF o acuerdo sensible no se sube. Va{" "}
+            <strong className="font-normal text-violet-200">incluido</strong> en{" "}
+            <strong className="font-normal text-cyan-200">Élite ($99/mes)</strong> y{" "}
+            <strong className="font-normal text-amber-200">Founding ($149/mes)</strong> — no
+            pagas un módulo aparte.
+          </p>
+          <div className="mt-5 flex flex-col gap-3 sm:flex-row sm:flex-wrap">
+            <Link
+              href="/pricing?plan=elite"
+              className="rounded border border-violet-400/70 px-5 py-2.5 text-center font-[family-name:var(--font-orbitron)] text-[10px] font-bold tracking-wider text-violet-100 hover:bg-violet-500/15"
+            >
+              ÉLITE $99 · 40 SELLOS/MES
+            </Link>
+            <Link
+              href="/pricing?plan=founding"
+              className="rounded border border-amber-400/70 px-5 py-2.5 text-center font-[family-name:var(--font-orbitron)] text-[10px] font-bold tracking-wider text-amber-100 hover:bg-amber-500/10"
+            >
+              FOUNDING $149 · 150 SELLOS/MES
+            </Link>
+            <Link
+              href="/sentinel-privacy"
+              className="rounded border border-cyan-600/50 px-5 py-2.5 text-center text-[10px] tracking-wide text-cyan-400 hover:text-cyan-200"
+            >
+              Detalles técnicos →
+            </Link>
+          </div>
         </div>
       </section>
 
