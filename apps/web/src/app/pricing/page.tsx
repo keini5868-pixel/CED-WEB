@@ -6,6 +6,7 @@ import { Suspense, useCallback, useEffect, useState } from "react";
 
 import { FOUNDING_MEMBER_MAX_SLOTS, PUBLIC_PLANS, SENTINEL_PRIVACY_PRODUCT } from "@ced/types";
 
+import { PlanHighlightList } from "@/components/billing/PlanHighlightList";
 import { startSentinelPrivacyCheckout, startSubscriptionCheckout } from "@/lib/api/billing";
 import { PublicHeaderLink, PublicSiteHeader } from "@/components/layout/PublicSiteHeader";
 import { createClient } from "@/lib/supabase/client";
@@ -197,11 +198,9 @@ function PricingContent() {
               {plan.id === "free_basic" && (
                 <p className="mt-1 text-xs text-cyan-500">Acceso por tiempo limitado</p>
               )}
-              <ul className="mt-4 space-y-1 text-sm text-cyan-100/75">
-                {plan.highlights.map((h) => (
-                  <li key={h}>· {h}</li>
-                ))}
-              </ul>
+              <div className="mt-4">
+                <PlanHighlightList highlights={plan.highlights} />
+              </div>
               {plan.id === "free_basic" ? (
                 <Link
                   href={signupHref}

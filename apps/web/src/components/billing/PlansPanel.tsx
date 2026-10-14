@@ -9,6 +9,7 @@ import {
   SENTINEL_PRIVACY_PRODUCT,
 } from "@ced/types";
 
+import { PlanHighlightList } from "@/components/billing/PlanHighlightList";
 import { useUsageBalance } from "@/hooks/useUsageBalance";
 import {
   startRechargeCheckout,
@@ -162,11 +163,12 @@ export function PlansPanel({ compact = false }: PlansPanelProps) {
                 Voz Jarvis · foco PM International
               </p>
             ) : null}
-            <ul className="mt-3 space-y-1 text-xs text-cyan-100/75">
-              {plan.highlights.slice(0, compact ? 4 : 8).map((h) => (
-                <li key={h}>· {h}</li>
-              ))}
-            </ul>
+            <div className="mt-3">
+              <PlanHighlightList
+                highlights={plan.highlights.slice(0, compact ? 4 : 8)}
+                compact={compact}
+              />
+            </div>
             <button
               type="button"
               disabled={busy !== null}

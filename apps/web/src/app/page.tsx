@@ -10,6 +10,8 @@ import {
   VOICE_TRIAL_MINUTES,
 } from "@ced/types";
 
+import { PlanHighlightList } from "@/components/billing/PlanHighlightList";
+
 import {
   PublicHeaderLink,
   PublicHeaderText,
@@ -186,11 +188,9 @@ export default function HomePage() {
                     Precio bloqueado 6 meses · {FOUNDING_MEMBER_MAX_SLOTS} cupos
                   </p>
                 )}
-                <ul className="mt-4 flex-1 space-y-1.5 text-xs text-cyan-100/75">
-                  {plan.highlights.map((h) => (
-                    <li key={h}>· {h}</li>
-                  ))}
-                </ul>
+                <div className="mt-4 flex-1">
+                  <PlanHighlightList highlights={plan.highlights} />
+                </div>
                 <Link
                   href={`/pricing?plan=${plan.id}`}
                   className={`mt-5 block rounded border py-2.5 text-center font-[family-name:var(--font-orbitron)] text-[10px] font-bold tracking-wider transition ${

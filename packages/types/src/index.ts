@@ -106,6 +106,7 @@ const COMMON_FREE_TOOLS = [
 ] as const;
 
 /** Copy en tarjetas CED — sin cifras de sellos (cupos solo en backend). */
+export const CED_PRIVACY_PLAN_BADGE = "PRIVACIDAD" as const;
 export const CED_PRIVACY_INCLUDED_HIGHLIGHT =
   "Privacidad verificable incluida" as const;
 
@@ -145,11 +146,11 @@ export const PUBLIC_PLANS = [
     priceUsd: 22,
     highlights: [
       "Cerrador de clientes PM International / FitLine",
+      CED_PRIVACY_INCLUDED_HIGHLIGHT,
       "Asistente de voz Jarvis",
       "Conocimiento de productos y objeciones",
       "Prospección y redes sociales",
       "Búsquedas web",
-      CED_PRIVACY_INCLUDED_HIGHLIGHT,
       "Chat de texto",
     ],
   },
@@ -159,10 +160,10 @@ export const PUBLIC_PLANS = [
     priceUsd: 30,
     highlights: [
       "Asistente de voz CED",
+      CED_PRIVACY_INCLUDED_HIGHLIGHT,
       "Búsquedas web (15/día)",
       "Creación de imágenes",
       ...COMMON_FREE_TOOLS,
-      CED_PRIVACY_INCLUDED_HIGHLIGHT,
       "Chat de texto",
     ],
   },
@@ -172,13 +173,13 @@ export const PUBLIC_PLANS = [
     priceUsd: 59,
     highlights: [
       "Cámara por voz (análisis de imagen)",
+      CED_PRIVACY_INCLUDED_HIGHLIGHT,
       "Búsquedas web ilimitadas",
       "Creación de PDF",
       "Publicación en redes sociales (Facebook / Instagram)",
       "Asistente de voz CED",
       "Creación de imágenes",
       ...COMMON_FREE_TOOLS,
-      CED_PRIVACY_INCLUDED_HIGHLIGHT,
       "Chat de texto",
     ],
   },
@@ -188,6 +189,7 @@ export const PUBLIC_PLANS = [
     priceUsd: 99,
     highlights: [
       "Modo avanzado (análisis profundo con Claude)",
+      CED_PRIVACY_INCLUDED_HIGHLIGHT,
       "Modo de prospección",
       "Mapa y navegación",
       "Publicación en redes sociales (Facebook / Instagram)",
@@ -197,7 +199,6 @@ export const PUBLIC_PLANS = [
       "Asistente de voz CED",
       "Creación de imágenes",
       ...COMMON_FREE_TOOLS,
-      CED_PRIVACY_INCLUDED_HIGHLIGHT,
       "Chat de texto",
     ],
   },
