@@ -221,7 +221,7 @@ function PricingContent() {
               )}
             </div>
           ))}
-          <div className="relative rounded border border-violet-400/55 bg-gradient-to-br from-violet-950/40 to-black/50 p-6 md:col-span-2">
+          <div className="relative rounded border border-violet-400/55 bg-gradient-to-br from-violet-950/40 to-black/50 p-6">
             <span className="absolute -top-2.5 left-4 rounded bg-violet-500/30 px-2 py-0.5 font-[family-name:var(--font-orbitron)] text-[9px] font-bold tracking-wider text-violet-100">
               {SENTINEL_PRIVACY_PRODUCT.homeBadge}
             </span>

@@ -3,11 +3,16 @@
 import Link from "next/link";
 import { useCallback, useState } from "react";
 
-import { FOUNDING_MEMBER_MAX_SLOTS, PUBLIC_PLANS } from "@ced/types";
+import {
+  FOUNDING_MEMBER_MAX_SLOTS,
+  PUBLIC_PLANS,
+  SENTINEL_PRIVACY_PRODUCT,
+} from "@ced/types";
 
 import { useUsageBalance } from "@/hooks/useUsageBalance";
 import {
   startRechargeCheckout,
+  startSentinelPrivacyCheckout,
   startSubscriptionCheckout,
 } from "@/lib/api/billing";
 
@@ -55,6 +60,21 @@ export function PlansPanel({ compact = false }: PlansPanelProps) {
   }, []);
 
   const paid = PUBLIC_PLANS.filter((p) => p.id !== "free_basic");
+  const sentinel = SENTINEL_PRIVACY_PRODUCT;
+
+  const subscribeSentinel = useCallback(async () => {
+    setBusy(sentinel.id);
+    setError(null);
+    try {
+      const url = await startSentinelPrivacyCheckout(sentinel.id);
+      if (url) window.location.href = url;
+      else setError("Stripe no devolvió la página de pago.");
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Error al iniciar pago.");
+    } finally {
+      setBusy(null);
+    }
+  }, [sentinel.id]);
 
   return (
     <div
@@ -154,6 +174,44 @@ export function PlansPanel({ compact = false }: PlansPanelProps) {
             </button>
           </div>
         ))}
+        <div className="relative rounded border border-violet-400/55 bg-gradient-to-br from-violet-950/45 to-black/50 p-4 ring-1 ring-violet-400/20">
+          <span className="absolute -top-2.5 left-3 rounded bg-violet-500/35 px-2 py-0.5 font-[family-name:var(--font-orbitron)] text-[8px] font-bold tracking-wider text-violet-100">
+            {sentinel.homeBadge}
+          </span>
+          <div className="flex items-baseline justify-between gap-2">
+            <div>
+              <p className="font-[family-name:var(--font-orbitron)] text-[9px] tracking-wider text-violet-400">
+                PRODUCTO APARTE
+              </p>
+              <h3 className="font-[family-name:var(--font-orbitron)] text-base text-violet-50">
+                {sentinel.label}
+              </h3>
+            </div>
+            <p className="font-[family-name:var(--font-orbitron)] text-xl text-violet-200">
+              ${sentinel.priceUsd}
+              <span className="text-xs text-violet-500">/mes</span>
+            </p>
+          </div>
+          <p className="mt-1 text-[11px] leading-snug text-violet-200/75">
+            {sentinel.homeSubtitle}
+          </p>
+          <p className="mt-1 text-[10px] text-cyan-500">
+            {sentinel.sealsPerMonth} sellos · factura Stripe separada de CED
+          </p>
+          <ul className="mt-3 space-y-1 text-xs text-cyan-100/75">
+            {sentinel.highlights.slice(0, compact ? 3 : 5).map((h) => (
+              <li key={h}>· {h}</li>
+            ))}
+          </ul>
+          <button
+            type="button"
+            disabled={busy !== null}
+            onClick={() => void subscribeSentinel()}
+            className="mt-4 w-full rounded border border-violet-400/80 py-2.5 font-[family-name:var(--font-orbitron)] text-[10px] font-bold tracking-wider text-violet-100 hover:bg-violet-500/15 disabled:opacity-50"
+          >
+            {busy === sentinel.id ? "REDIRIGIENDO A STRIPE…" : "SUSCRIBIR SENTINEL"}
+          </button>
+        </div>
       </div>
 
       {error ? <p className="text-sm text-red-400">{error}</p> : null}
