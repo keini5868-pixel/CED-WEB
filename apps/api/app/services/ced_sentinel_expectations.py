@@ -29,6 +29,24 @@ SYSTEM_EXPECTATIONS: list[dict[str, str]] = [
         ),
     },
     {
+        "id": "analyze_not_generate",
+        "title": "Foto + Analizar = duda, no PNG",
+        "body": (
+            "Si el usuario elige Analizar al subir una foto (o pregunta cómo se hace "
+            "eso que se ve), CED explica y Centinela bloquea generate_image / "
+            "generate_image_with_reference. Editar, Variar o «hazme un flyer» sí generan."
+        ),
+    },
+    {
+        "id": "voice_history",
+        "title": "Historial de voz",
+        "body": (
+            "Piloto nativo: el transcript se persiste en call_ended/call_analyzed "
+            "(webhook Retell → persist_retell_call_transcript). Custom LLM también "
+            "append por turno. Historial → mismo hilo que el chat."
+        ),
+    },
+    {
         "id": "voice_tools",
         "title": "Tools de voz",
         "body": (

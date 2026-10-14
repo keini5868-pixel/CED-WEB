@@ -955,6 +955,50 @@ def is_explicit_publish_to_social(text: str) -> bool:
     return True
 
 
+_ATTACHMENT_VISION_QUESTION = re.compile(
+    r"(?i)\b(?:"
+    r"c[oó]mo\s+se\s+(?:prepara|hace|cocina|come|usa|arma|elabora|mezcla|sirve|monta)|"
+    r"c[oó]mo\s+(?:preparo|hago|cocino|uso|armo)|"
+    r"qu[eé]\s+(?:ingredientes|lleva|contiene|es\s+esto|se\s+ve)|"
+    r"para\s+qu[eé]\s+sirve|"
+    r"receta|"
+    r"expl[ií]came\s+(?:c[oó]mo|qu[eé]|esta|esto)|"
+    r"analiza|analiz[aá]|describe|describ[ií]|"
+    r"qu[eé]\s+piensas\s+de\s+esta\s+imagen|"
+    r"qu[eé]\s+ves"
+    r")\b"
+)
+
+
+def is_attachment_vision_question(text: str) -> bool:
+    """Pregunta sobre lo visible (receta, cómo se hace) — no es pedido de generar."""
+    t = (text or "").strip()
+    if not t:
+        return False
+    if is_attachment_image_edit_request(t):
+        return False
+    if _ATTACHMENT_VISION_QUESTION.search(t):
+        return True
+    return False
+
+
+def attachment_stays_on_vision(image_mode: str | None, text: str) -> bool:
+    """Modo Analizar (o pregunta de ayuda) debe responder, no generar otra imagen.
+
+    Analizar es autoridad: aunque el texto suene a «hazme» / creativo, se explica
+    lo visible. Editar/variar/publicar son modos explícitos distintos.
+    """
+    mode = (image_mode or "").strip().lower()
+    t = (text or "").strip()
+    if mode in {"edit", "variation", "inspired", "publish"}:
+        return False
+    if mode == "analyze":
+        return True
+    if is_attachment_vision_question(t):
+        return True
+    return False
+
+
 def is_attachment_image_edit_request(text: str) -> bool:
     """Pedido de editar/variar la imagen adjunta (no publicar ni solo analizar)."""
     t = (text or "").strip()

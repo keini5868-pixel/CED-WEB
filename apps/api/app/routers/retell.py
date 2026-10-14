@@ -27,8 +27,17 @@ from app.services.retell_agent_setup import (
     ensure_retell_agent,
 )
 from app.services.retell_ws_tracker import active_ws_calls
-from app.services.retell_call_registry import bind_call_user, release_call_user, resolve_call_user
-from app.services.voice_history import get_active_conversation, set_active_conversation
+from app.services.retell_call_registry import (
+    bind_call_user,
+    release_call_user,
+    resolve_call_conversation,
+    resolve_call_user,
+)
+from app.services.voice_history import (
+    get_active_conversation,
+    persist_retell_call_transcript,
+    set_active_conversation,
+)
 from app.services.retell_client import get_retell_client, verify_retell_webhook
 from app.services.retell_web_call import web_call_client_payload
 from app.services.retell_native_pilot import (
@@ -103,6 +112,23 @@ def _conversation_id_for_call(user_id: str, body: RegisterCallBody | None) -> st
         set_active_conversation(user_id, conv)
         return conv
     return None
+
+
+async def _ensure_conversation_id_for_call(
+    user_id: str, body: RegisterCallBody | None
+) -> str | None:
+    conversation_id = _conversation_id_for_call(user_id, body)
+    if conversation_id:
+        return conversation_id
+    try:
+        conv = await asyncio.to_thread(supabase_db.create_conversation, user_id)
+        conversation_id = str((conv or {}).get("id") or "").strip() or None
+        if conversation_id:
+            set_active_conversation(user_id, conversation_id)
+        return conversation_id
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("[RETELL] create_conversation en register-call falló: %s", exc)
+        return None
 
 
 async def _voice_access_or_raise(
@@ -241,15 +267,7 @@ async def register_retell_call(
     except Exception as exc:  # noqa: BLE001
         logger.warning("[RETELL] agent refresh before call failed (continuing): %s", exc)
 
-    conversation_id = _conversation_id_for_call(user_id, body)
-    if not conversation_id:
-        try:
-            conv = await asyncio.to_thread(supabase_db.create_conversation, user_id)
-            conversation_id = str((conv or {}).get("id") or "").strip() or None
-            if conversation_id:
-                set_active_conversation(user_id, conversation_id)
-        except Exception as exc:  # noqa: BLE001
-            logger.warning("[RETELL] create_conversation en register-call falló: %s", exc)
+    conversation_id = await _ensure_conversation_id_for_call(user_id, body)
     call_vars: dict[str, str] = {"user_id": user_id}
     call_meta: dict[str, str] = {"user_id": user_id}
     if conversation_id:
@@ -350,7 +368,7 @@ async def register_retell_native_pilot_call(
     except Exception as exc:  # noqa: BLE001
         logger.warning("[NATIVE-PILOT] agent refresh before call failed (continuing): %s", exc)
 
-    conversation_id = _conversation_id_for_call(user_id, body)
+    conversation_id = await _ensure_conversation_id_for_call(user_id, body)
     native_meta: dict[str, str] = {"user_id": user_id, "pilot": "native-llm-environment"}
     native_vars: dict[str, str] = {
         "user_id": user_id,
@@ -933,24 +951,40 @@ async def retell_webhook(request: Request) -> dict[str, Any]:
         call_id,
         call.get("call_status") or call.get("status"),
     )
-    if event == "call_ended" and call_id:
+    if event in {"call_ended", "call_analyzed"} and call_id:
         uid = resolve_call_user(str(call_id), payload)
-        if uid:
+        if uid and event == "call_ended":
             clear_finance_pending_for_call(uid, str(call_id))
             clear_meta_pending_for_call(uid, str(call_id))
             clear_advanced_mode_for_call(uid, str(call_id))
+        call_payload: dict[str, Any] = call if isinstance(call, dict) else {}
         try:
             client = get_retell_client()
             if client:
                 detail = client.call.retrieve(call_id=str(call_id))
+                if hasattr(detail, "to_dict"):
+                    call_payload = detail.to_dict()
+                elif isinstance(detail, dict):
+                    call_payload = detail
                 logger.info(
-                    "[RETELL] call_ended id=%s disconnection=%s transcript_len=%s",
+                    "[RETELL] %s id=%s disconnection=%s transcript_len=%s",
+                    event,
                     call_id,
                     getattr(detail, "disconnection_reason", None),
                     len(getattr(detail, "transcript_object", None) or []),
                 )
         except Exception as exc:  # noqa: BLE001
             logger.warning("[RETELL] call retrieve failed: %s", exc)
+        if uid:
+            conv = resolve_call_conversation(str(call_id), payload)
+            persist_retell_call_transcript(
+                uid,
+                conv,
+                call_payload,
+                call_id=str(call_id),
+            )
+        if event == "call_ended":
+            release_call_user(str(call_id))
     return {"received": True}
 
 

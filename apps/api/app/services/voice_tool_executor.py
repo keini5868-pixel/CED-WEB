@@ -797,6 +797,20 @@ async def _execute_voice_tool_body(
             )
 
             gate_text = raw_user or llm_prompt
+            from app.services.ced_sentinel import intercept_help_not_generate
+
+            if intercept_help_not_generate(gate_text, tool="generate_image"):
+                logger.info(
+                    "[VOICE:IMAGE] sentinel help-not-generate user=%s raw=%s",
+                    user_id[:8],
+                    (raw_user or "")[:80],
+                )
+                return _spoken_err(
+                    "Entendido, señor: analizo lo que se ve y le ayudo a resolverlo. "
+                    "No voy a generar otra imagen. Si quiere un creativo, dígalo explícito "
+                    "o elija Editar en el panel.",
+                    error="analyze_not_generate",
+                )
             copy_already_locked = overlay_is_locked(llm_prompt, history) or overlay_is_locked(
                 raw_user, history
             )
@@ -1063,6 +1077,16 @@ async def _execute_voice_tool_body(
             quality = str(params.get("quality") or "standard")
             if not prompt:
                 return _spoken_err("Indique qué desea generar o cambiar en la imagen, señor.")
+            from app.services.ced_sentinel import intercept_help_not_generate
+
+            if intercept_help_not_generate(
+                raw_user or prompt, tool="generate_image_with_reference"
+            ):
+                return _spoken_err(
+                    "Esta foto es para analizarla, señor: le explico cómo se hace. "
+                    "No genero una imagen nueva. Para editarla, elija Editar o Variar.",
+                    error="analyze_not_generate",
+                )
             if raw_user and not user_asks_for_on_image_copy(raw_user):
                 prompt = build_reference_scene_edit_prompt(raw_user)
 

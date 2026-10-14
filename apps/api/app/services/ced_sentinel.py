@@ -259,6 +259,40 @@ def image_brief_needs_correction(produced: str, requested: str) -> bool:
     return _image_brief_drift_core(produced, requested)
 
 
+def intercept_help_not_generate(
+    user_text: str,
+    *,
+    image_mode: str | None = None,
+    tool: str = "generate_image",
+) -> bool:
+    """True: el usuario pide resolver una duda (Analizar / cómo se hace), no una imagen nueva."""
+    from app.services.chat_intents import (
+        attachment_stays_on_vision,
+        is_attachment_vision_question,
+    )
+
+    text = (user_text or "").strip()
+    if not attachment_stays_on_vision(image_mode, text) and not is_attachment_vision_question(
+        text
+    ):
+        return False
+    logger.info(
+        "[SENTINEL] help-not-generate tool=%s mode=%s text=%s",
+        tool,
+        (image_mode or "-")[:20],
+        text[:120],
+    )
+    _append_event(
+        kind="guard",
+        area="imagen",
+        level="ok",
+        title="Analizar: explicar, no generar",
+        detail=f"{tool} · {(image_mode or 'vision')} · {text[:180]}",
+        quiet=True,
+    )
+    return True
+
+
 def brief_drifts_from_request(produced: str, requested: str) -> bool:
     """True con la guardia activa (PDF/imagen en chat con sentinel UI)."""
     if not _is_enabled():

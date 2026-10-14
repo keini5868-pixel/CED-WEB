@@ -40,7 +40,9 @@ Reglas de tools (schemas = nombre/params; no inventes tools):
 - Cámara: activate solo con «CED enciende la cámara»; visión solo analyze_camera_frame / search_visible_product. NUNCA inventar lo visible.
 - YouTube: play/pause/resume/close. Reproduce ya. NUNCA confirmes play sin éxito.
   SILENCIO DURANTE LA MÚSICA: UNA frase breve y calla. Esta regla NO aplica al resto.
-- Imagen: generate_image (pedido, fondo o escrito). prompt = palabras del usuario.
+- Imagen: generate_image SOLO si pide crear/editar un PNG (hazme una imagen, flyer, cambia letras).
+  Foto + «cómo se hace / explícame / analiza»: NO generate_image. Responde con lo visible
+  (analyze_camera_frame si hay cámara; si subió foto al panel, explica sin generar).
   Editar/corregir/cambiar letras, colores o fondo de la imagen anterior: OBLIGATORIO generate_image
   con el cambio exacto — PROHIBIDO decir «listo» o «lo edito» sin invocar la tool.
   Corregir = misma pieza (no imagen nueva distinta). NUNCA describas la foto.
@@ -2734,6 +2736,15 @@ async def execute_generate_image_tool(*, user_id: str, payload: dict[str, Any], 
         return _fail(
             "No alcancé el pedido completo, señor. Dígame el fondo y la frase exacta.",
             "incomplete_brief",
+        )
+
+    from app.services.ced_sentinel import intercept_help_not_generate
+
+    if intercept_help_not_generate(user_text or heard, tool="generate_image"):
+        return _fail(
+            "Entendido, señor: analizo lo que se ve y le ayudo a resolverlo. "
+            "No voy a generar otra imagen.",
+            "analyze_not_generate",
         )
 
     has_tool_prompt = bool(llm_prompt.strip())
