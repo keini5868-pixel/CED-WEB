@@ -180,7 +180,6 @@ export const PUBLIC_PLANS = [
     label: "CED Élite",
     priceUsd: 99,
     highlights: [
-      "Sentinel Privacy incluido (40 sellos verificables / mes)",
       "Modo avanzado (análisis profundo con Claude)",
       "Modo de prospección",
       "Mapa y navegación",
@@ -199,7 +198,6 @@ export const PUBLIC_PLANS = [
     label: "CED Founding",
     priceUsd: 149,
     highlights: [
-      "Sentinel Privacy incluido (150 sellos verificables / mes)",
       "Precio bloqueado por 6 meses",
       "Cupos limitados",
       "Modo avanzado (análisis profundo con Claude)",
@@ -226,7 +224,7 @@ export type SentinelPrivacyPlanId =
 export const SENTINEL_PRIVACY_PLAN_PRICES_USD: Record<SentinelPrivacyPlanId, number> = {
   sentinel_solo: 12,
   sentinel_pro: 29,
-  sentinel_business: 79,
+  sentinel_business: 149,
 };
 
 export const SENTINEL_PRIVACY_SEALS_PER_MONTH: Record<SentinelPrivacyPlanId, number> = {
@@ -235,44 +233,28 @@ export const SENTINEL_PRIVACY_SEALS_PER_MONTH: Record<SentinelPrivacyPlanId, num
   sentinel_business: 150,
 };
 
-export const SENTINEL_PUBLIC_PLANS = [
-  {
-    id: "sentinel_solo" as const,
-    label: "Sentinel Privacy Solo",
-    priceUsd: 12,
-    sealsPerMonth: 10,
-    highlights: [
-      "Sellos verificables (hash + tiempo)",
-      "Contenido sensible fuera de la cadena",
-      "Ideal para personas y freelancers",
-      "Misma cuenta CED; producto de facturación aparte",
-    ],
-  },
-  {
-    id: "sentinel_pro" as const,
-    label: "Sentinel Privacy Pro",
-    priceUsd: 29,
-    sealsPerMonth: 40,
-    highlights: [
-      "Todo lo de Solo",
-      "Más sellos para equipos pequeños",
-      "PDFs y entregables generados en CED",
-      "Prioridad en funciones de privacidad selectiva",
-    ],
-  },
-  {
-    id: "sentinel_business" as const,
-    label: "Sentinel Privacy Business",
-    priceUsd: 79,
-    sealsPerMonth: 150,
-    highlights: [
-      "Todo lo de Pro",
-      "Volumen para negocios y agencias",
-      "Facturación empresarial vía Stripe",
-      "Roadmap: políticas DLP y despliegue dedicado",
-    ],
-  },
-] as const;
+/** SKU público — línea aparte de CED (misma cuenta, otra suscripción Stripe). */
+export const SENTINEL_PRIVACY_PRODUCT = {
+  id: "sentinel_business" as const,
+  label: "Sentinel Privacy",
+  priceUsd: 149,
+  sealsPerMonth: 150,
+  tagline: "Privacidad verificable · producto aparte del plan CED",
+  notIncluded: [
+    "No incluye voz Jarvis ni minutos CED",
+    "No incluye chat, imágenes ni PDF del asistente",
+    "No reemplaza Élite ($99) ni Founding ($149) — es otra factura",
+  ],
+  highlights: [
+    "150 sellos verificables al mes (hash SHA-256 + tiempo en cadena)",
+    "El documento sensible no se publica: solo el compromiso criptográfico",
+    "Pensado para contratos, acuerdos y entregables confidenciales",
+    "Wallet Lace + red Midnight (demo técnica en /shield)",
+    "Suscripción Stripe separada — puedes tener CED básico y Sentinel a la vez",
+  ],
+} as const;
+
+export const SENTINEL_PUBLIC_PLANS = [SENTINEL_PRIVACY_PRODUCT] as const;
 
 /** Estados del orbe central JARVIS (Fase 2) */
 export type OrbState =

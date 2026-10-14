@@ -53,12 +53,11 @@ export default function AdminSentinelPrivacyPage() {
     <div className="space-y-6 p-4">
       <HudPanel title="SENTINEL PRIVACY · ADMIN">
         <p className="ced-hud-text-body max-w-3xl">
-          Producto aparte de CED (sellos verificables). Los clientes pagan en{" "}
+          SKU aparte de Élite/Founding — checkout propio en{" "}
           <Link href="/sentinel-privacy" className="text-cyan-300 underline">
             /sentinel-privacy
           </Link>
-          . No confundir con <strong className="font-normal">Centinela Ops</strong> (calidad
-          voz/imagen).
+          . No confundir con <strong className="font-normal">Centinela Ops</strong> (QA voz/imagen).
         </p>
         {data ? (
           <p className="mt-2 text-xs text-violet-300/90">

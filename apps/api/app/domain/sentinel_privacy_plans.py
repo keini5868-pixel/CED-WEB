@@ -15,7 +15,7 @@ class SentinelPlanId(StrEnum):
 SENTINEL_PLAN_PRICES_USD: dict[str, int] = {
     SentinelPlanId.SOLO.value: 12,
     SentinelPlanId.PRO.value: 29,
-    SentinelPlanId.BUSINESS.value: 79,
+    SentinelPlanId.BUSINESS.value: 149,
 }
 
 SENTINEL_SEALS_PER_MONTH: dict[str, int] = {
@@ -27,26 +27,21 @@ SENTINEL_SEALS_PER_MONTH: dict[str, int] = {
 SENTINEL_PLAN_LABELS: dict[str, str] = {
     SentinelPlanId.SOLO.value: "Sentinel Privacy Solo",
     SentinelPlanId.PRO.value: "Sentinel Privacy Pro",
-    SentinelPlanId.BUSINESS.value: "Sentinel Privacy Business",
+    SentinelPlanId.BUSINESS.value: "Sentinel Privacy",
 }
 
 STRIPE_SENTINEL_CHECKOUT_PLANS = frozenset(SENTINEL_PLAN_PRICES_USD.keys())
 
-# Incluido en suscripción CED (un solo checkout — no hace falta SKU aparte).
-CED_PLANS_WITH_SENTINEL_BUNDLE = frozenset({"elite", "founding"})
-CED_SENTINEL_SEALS_BUNDLE: dict[str, int] = {
-    "elite": SENTINEL_SEALS_PER_MONTH[SentinelPlanId.PRO.value],
-    "founding": SENTINEL_SEALS_PER_MONTH[SentinelPlanId.BUSINESS.value],
-}
-CED_TO_SENTINEL_STORAGE_PLAN: dict[str, str] = {
-    "elite": SentinelPlanId.PRO.value,
-    "founding": SentinelPlanId.BUSINESS.value,
-}
+# Oferta pública principal (SKU aparte de CED Élite/Founding).
+SENTINEL_PUBLIC_FLAGSHIP_ID = SentinelPlanId.BUSINESS.value
 
-
-def ced_plan_includes_sentinel_bundle(ced_plan_id: str | None) -> bool:
-    pid = (ced_plan_id or "").strip().lower()
-    return pid in CED_PLANS_WITH_SENTINEL_BUNDLE
+SENTINEL_PRODUCT_SPEC = (
+    "Sellos verificables: solo hash SHA-256 + marca de tiempo en cadena (Midnight/Lace).",
+    "El PDF, audio o acuerdo NO se sube a la blockchain ni a servidores públicos.",
+    "Facturación Stripe separada: no sustituye ni mezcla tu plan CED (voz, chat, imágenes).",
+    "Requiere wallet Lace en red Midnight para anclar el sello (demo en /shield).",
+    "Ideal para contratos, entregables sensibles y cumplimiento sin exponer contenido.",
+)
 
 
 def is_sentinel_privacy_plan(plan_id: str | None) -> bool:
@@ -77,42 +72,52 @@ class SentinelPlanPublic:
 
 
 def public_sentinel_plans_catalog() -> list[dict]:
+    """Catálogo público: un SKU flagship aparte de CED."""
+    pid = SENTINEL_PUBLIC_FLAGSHIP_ID
+    row = SentinelPlanPublic(
+        id=pid,
+        label=SENTINEL_PLAN_LABELS[pid],
+        price_usd=SENTINEL_PLAN_PRICES_USD[pid],
+        seals_per_month=SENTINEL_SEALS_PER_MONTH[pid],
+        highlights=SENTINEL_PRODUCT_SPEC,
+    )
+    return [
+        {
+            "id": row.id,
+            "label": row.label,
+            "price_usd": row.price_usd,
+            "seals_per_month": row.seals_per_month,
+            "highlights": list(row.highlights),
+            "product_line": "sentinel_privacy",
+            "not_ced_plan": True,
+            "ced_plans_unrelated": True,
+        }
+    ]
+
+
+def all_sentinel_checkout_plans_catalog() -> list[dict]:
+    """Todos los SKUs Stripe (admin / legacy)."""
     rows: list[SentinelPlanPublic] = [
         SentinelPlanPublic(
             id=SentinelPlanId.SOLO.value,
             label=SENTINEL_PLAN_LABELS[SentinelPlanId.SOLO.value],
             price_usd=SENTINEL_PLAN_PRICES_USD[SentinelPlanId.SOLO.value],
             seals_per_month=SENTINEL_SEALS_PER_MONTH[SentinelPlanId.SOLO.value],
-            highlights=(
-                "Sellos verificables (hash + tiempo)",
-                "Contenido sensible fuera de la cadena",
-                "Ideal para personas y freelancers",
-                "Compatible con Lace / Midnight (cuando actives Shield)",
-            ),
+            highlights=SENTINEL_PRODUCT_SPEC[:3],
         ),
         SentinelPlanPublic(
             id=SentinelPlanId.PRO.value,
             label=SENTINEL_PLAN_LABELS[SentinelPlanId.PRO.value],
             price_usd=SENTINEL_PLAN_PRICES_USD[SentinelPlanId.PRO.value],
             seals_per_month=SENTINEL_SEALS_PER_MONTH[SentinelPlanId.PRO.value],
-            highlights=(
-                "Todo lo de Solo",
-                "Más sellos para equipos pequeños",
-                "PDFs, acuerdos y entregables de CED",
-                "Prioridad en nuevas funciones de privacidad",
-            ),
+            highlights=SENTINEL_PRODUCT_SPEC[:4],
         ),
         SentinelPlanPublic(
             id=SentinelPlanId.BUSINESS.value,
             label=SENTINEL_PLAN_LABELS[SentinelPlanId.BUSINESS.value],
             price_usd=SENTINEL_PLAN_PRICES_USD[SentinelPlanId.BUSINESS.value],
             seals_per_month=SENTINEL_SEALS_PER_MONTH[SentinelPlanId.BUSINESS.value],
-            highlights=(
-                "Todo lo de Pro",
-                "Volumen para negocios y agencias",
-                "Soporte para despliegue dedicado (roadmap)",
-                "Facturación empresarial vía Stripe",
-            ),
+            highlights=SENTINEL_PRODUCT_SPEC,
         ),
     ]
     return [

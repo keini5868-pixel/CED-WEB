@@ -2427,43 +2427,16 @@ def cancel_sentinel_privacy_subscription(user_id: str) -> None:
         )
 
 
-def sync_sentinel_privacy_from_ced_plan(
-    user_id: str,
-    ced_plan_id: str,
-    *,
-    status: str,
-    period_end: str | None = None,
-) -> None:
-    """Élite / Founding incluyen Sentinel Privacy en el mismo plan."""
-    from app.domain.plans import normalize_plan_id
-    from app.domain.sentinel_privacy_plans import (
-        CED_PLANS_WITH_SENTINEL_BUNDLE,
-        CED_SENTINEL_SEALS_BUNDLE,
-        CED_TO_SENTINEL_STORAGE_PLAN,
-    )
-
-    ced = normalize_plan_id(ced_plan_id)
-    if ced in CED_PLANS_WITH_SENTINEL_BUNDLE:
-        storage_plan = CED_TO_SENTINEL_STORAGE_PLAN[ced]
-        seals = int(CED_SENTINEL_SEALS_BUNDLE[ced])
-        upsert_sentinel_privacy_subscription(
-            user_id=user_id,
-            plan_id=storage_plan,
-            status=status if status in _ACTIVE_SENTINEL_STATUSES else status,
-            stripe_subscription_id=None,
-            seals_per_month=seals,
-            period_end=period_end,
-        )
-        return
-
-    row = get_sentinel_privacy_subscription(user_id) or {}
-    if row and not (row.get("stripe_subscription_id") or "").strip():
-        cancel_sentinel_privacy_subscription(user_id)
-
-
-def _sentinel_entitlement_from_row(row: dict[str, Any] | None) -> dict[str, Any] | None:
+def sentinel_privacy_entitlement(user_id: str) -> dict[str, Any]:
+    """Solo suscripción Sentinel Privacy (SKU aparte de CED)."""
+    row = get_sentinel_privacy_subscription(user_id)
     if not row:
-        return None
+        return {
+            "active": False,
+            "plan_id": None,
+            "seals_remaining": 0,
+            "seals_per_month": 0,
+        }
     status = str(row.get("status") or "")
     active = status in _ACTIVE_SENTINEL_STATUSES
     cap = int(row.get("seals_per_month") or 0)
@@ -2477,49 +2450,6 @@ def _sentinel_entitlement_from_row(row: dict[str, Any] | None) -> dict[str, Any]
         "seals_used_in_period": used,
         "seals_remaining": remaining,
         "period_end": row.get("period_end"),
-        "source": "sentinel_subscription",
-    }
-
-
-def sentinel_privacy_entitlement(user_id: str) -> dict[str, Any]:
-    """Estado Sentinel Privacy — fila propia o bundle Élite/Founding."""
-    from app.domain.plans import normalize_plan_id
-    from app.domain.sentinel_privacy_plans import (
-        CED_PLANS_WITH_SENTINEL_BUNDLE,
-        CED_SENTINEL_SEALS_BUNDLE,
-        CED_TO_SENTINEL_STORAGE_PLAN,
-    )
-
-    row = get_sentinel_privacy_subscription(user_id)
-    ent = _sentinel_entitlement_from_row(row)
-    if ent and ent.get("active"):
-        return ent
-
-    sub = get_subscription(user_id) or {}
-    ced = normalize_plan_id(sub.get("plan_id"))
-    sub_status = str(sub.get("status") or "")
-    if ced in CED_PLANS_WITH_SENTINEL_BUNDLE and sub_status in _ACTIVE_SENTINEL_STATUSES:
-        cap = int(CED_SENTINEL_SEALS_BUNDLE[ced])
-        used = int((row or {}).get("seals_used_in_period") or 0)
-        return {
-            "active": True,
-            "plan_id": CED_TO_SENTINEL_STORAGE_PLAN[ced],
-            "ced_plan_id": ced,
-            "status": sub_status,
-            "seals_per_month": cap,
-            "seals_used_in_period": used,
-            "seals_remaining": max(0, cap - used),
-            "period_end": sub.get("current_period_end") or (row or {}).get("period_end"),
-            "source": "ced_bundle",
-        }
-
-    if ent:
-        return ent
-    return {
-        "active": False,
-        "plan_id": None,
-        "seals_remaining": 0,
-        "seals_per_month": 0,
     }
 
 
@@ -2529,7 +2459,7 @@ def consume_sentinel_seal_credit(user_id: str) -> dict[str, Any]:
         return {
             "ok": False,
             "code": "sentinel_subscription_required",
-            "error": "Sentinel Privacy incluido en Élite o Founding — suscríbete en Planes.",
+            "error": "Activa Sentinel Privacy en /sentinel-privacy (producto aparte de CED).",
         }
     if int(ent.get("seals_remaining") or 0) <= 0:
         return {
@@ -2539,21 +2469,6 @@ def consume_sentinel_seal_credit(user_id: str) -> dict[str, Any]:
         }
     now = datetime.now(timezone.utc).isoformat()
     new_used = int(ent.get("seals_used_in_period") or 0) + 1
-    if ent.get("source") == "ced_bundle":
-        from app.domain.plans import normalize_plan_id
-        from app.domain.sentinel_privacy_plans import (
-            CED_SENTINEL_SEALS_BUNDLE,
-            CED_TO_SENTINEL_STORAGE_PLAN,
-        )
-
-        sub = get_subscription(user_id) or {}
-        ced = normalize_plan_id(sub.get("plan_id"))
-        sync_sentinel_privacy_from_ced_plan(
-            user_id,
-            ced,
-            status=str(sub.get("status") or "active"),
-            period_end=sub.get("current_period_end"),
-        )
     try:
         client = _client()
         client.table("sentinel_privacy_subscriptions").update(
