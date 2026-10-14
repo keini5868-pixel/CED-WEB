@@ -65,6 +65,7 @@ class Settings(BaseSettings):
     stripe_price_sentinel_solo: str = ""
     stripe_price_sentinel_pro: str = ""
     stripe_price_sentinel_business: str = ""
+    stripe_product_sentinel_business: str = ""
 
     redis_url: str = "redis://localhost:6379/0"
 

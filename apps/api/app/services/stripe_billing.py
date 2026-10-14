@@ -213,6 +213,34 @@ def create_subscription_checkout(user_id: str, email: str, plan_id: str) -> dict
     return {"url": session.url, "session_id": session.id}
 
 
+def _monthly_price_on_product(
+    product_id: str,
+    *,
+    expected_unit_amount: int | None = None,
+) -> str | None:
+    """Resuelve price_... desde prod_... (precio recurrente mensual activo)."""
+    pid = (product_id or "").strip()
+    if not pid:
+        return None
+    _configure_stripe()
+    prices = stripe.Price.list(product=pid, active=True, limit=20).data
+    best_any: str | None = None
+    for price in prices:
+        recurring = getattr(price, "recurring", None) or {}
+        interval = (
+            recurring.get("interval")
+            if isinstance(recurring, dict)
+            else getattr(recurring, "interval", None)
+        )
+        if interval != "month":
+            continue
+        price_id = str(price.id)
+        best_any = best_any or price_id
+        if expected_unit_amount is not None and int(price.unit_amount or 0) == expected_unit_amount:
+            return price_id
+    return best_any
+
+
 def price_id_for_sentinel_plan(plan_id: str, settings: Settings | None = None) -> str | None:
     s = settings or get_settings()
     pid = normalize_sentinel_plan_id(plan_id)
@@ -221,7 +249,16 @@ def price_id_for_sentinel_plan(plan_id: str, settings: Settings | None = None) -
         "sentinel_pro": s.stripe_price_sentinel_pro.strip(),
         "sentinel_business": s.stripe_price_sentinel_business.strip(),
     }
-    return mapping.get(pid) or None
+    direct = mapping.get(pid) or None
+    if direct:
+        return direct
+    if pid == "sentinel_business" and s.stripe_product_sentinel_business.strip():
+        amount = int(SENTINEL_PLAN_PRICES_USD[pid]) * 100
+        return _monthly_price_on_product(
+            s.stripe_product_sentinel_business.strip(),
+            expected_unit_amount=amount,
+        )
+    return None
 
 
 def ensure_stripe_sentinel_plan_price(plan_id: str, settings: Settings | None = None) -> str:
@@ -238,6 +275,22 @@ def ensure_stripe_sentinel_plan_price(plan_id: str, settings: Settings | None = 
 
     _configure_stripe(s)
     amount = int(SENTINEL_PLAN_PRICES_USD[pid]) * 100
+    if pid == "sentinel_business" and s.stripe_product_sentinel_business.strip():
+        from_product = _monthly_price_on_product(
+            s.stripe_product_sentinel_business.strip(),
+            expected_unit_amount=amount,
+        )
+        if from_product:
+            return from_product
+        price = stripe.Price.create(
+            product=s.stripe_product_sentinel_business.strip(),
+            unit_amount=amount,
+            currency="usd",
+            recurring={"interval": "month"},
+            metadata={"sentinel_plan_id": pid, "product_line": "sentinel_privacy"},
+            nickname=SENTINEL_PLAN_LABELS.get(pid, "Sentinel Privacy"),
+        )
+        return str(price.id)
     label = SENTINEL_PLAN_LABELS.get(pid, "Sentinel Privacy")
     description = (
         "Sellos verificables (hash + tiempo). Producto aparte de la suscripción CED."
