@@ -51,11 +51,16 @@ export default function AdminSentinelPrivacyPage() {
 
   return (
     <div className="space-y-6 p-4">
-      <HudPanel title="SENTINEL PRIVACY · ADMIN">
+      <HudPanel title="SENTINEL PRIVACY · COBROS (ADMIN)">
         <p className="ced-hud-text-body max-w-3xl">
-          SKU aparte de Élite/Founding — checkout propio en{" "}
-          <Link href="/sentinel-privacy" className="text-cyan-300 underline">
-            /sentinel-privacy
+          Esta pantalla es <strong className="font-normal">solo back-office</strong> (Stripe y
+          suscripciones). El módulo que usa el cliente está en CED:{" "}
+          <Link href="/dashboard/sentinel" className="text-violet-200 underline">
+            Sistema → Sentinel
+          </Link>
+          {" · "}
+          <Link href="/dashboard/sentinel" className="text-cyan-300 underline">
+            /dashboard/sentinel
           </Link>
           . No confundir con <strong className="font-normal">Centinela Ops</strong> (QA voz/imagen).
         </p>
@@ -69,13 +74,19 @@ export default function AdminSentinelPrivacyPage() {
         ) : null}
         {error ? <p className="mt-3 text-sm text-red-400">{error}</p> : null}
         <div className="mt-4 flex flex-wrap gap-2">
+          <Link
+            href="/dashboard/sentinel"
+            className="rounded border border-violet-400 bg-violet-500/20 px-3 py-2 text-[10px] font-bold uppercase tracking-wider text-violet-50 hover:bg-violet-500/30"
+          >
+            Abrir módulo en CED
+          </Link>
           <button
             type="button"
             disabled={busy}
             onClick={() => void syncStripe()}
             className="rounded border border-violet-400/60 px-3 py-2 text-[10px] font-bold uppercase tracking-wider text-violet-100 hover:bg-violet-500/15 disabled:opacity-50"
           >
-            {busy ? "Stripe…" : "Crear precios Stripe ($12/$29/$79)"}
+            {busy ? "Stripe…" : "Sincronizar precio Stripe ($200)"}
           </button>
           <button
             type="button"
