@@ -30,7 +30,7 @@ export default async function AdminLayout({
   }
 
   return (
-    <HudShell email={user.email} isSuperAdmin isPresenterOwner={false}>
+    <HudShell email={user.email} isSuperAdmin isPresenterOwner={false} studio>
       <div className="border-b border-[var(--ced-cyan)]/30 bg-[var(--ced-bg-panel)] px-4 py-2.5 ced-mark-text text-sm uppercase">
         MODO ADMINISTRADOR
       </div>
