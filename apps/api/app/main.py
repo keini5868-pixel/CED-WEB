@@ -102,9 +102,16 @@ async def lifespan(_app: FastAPI):
                 )
             elif not settings.google_api_key.strip():
                 logger.warning("GOOGLE_API_KEY vacía — cerebro Gemini voz no funcionará")
+            import threading
+
             from app.services.retell_agent_setup import bootstrap_retell_if_needed
 
-            bootstrap_retell_if_needed()
+            # No bloquear /health: Retell a veces tarda > 90 s y Railway mata el deploy.
+            threading.Thread(
+                target=bootstrap_retell_if_needed,
+                name="retell-bootstrap",
+                daemon=True,
+            ).start()
 
     try:
         from app.services.stripe_billing import ensure_stripe_plan_price
