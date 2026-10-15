@@ -66,6 +66,9 @@ logger = logging.getLogger("ced.api")
 
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
+    import asyncio
+    import threading
+
     from app.config import reload_settings
 
     settings = reload_settings()
@@ -83,21 +86,22 @@ async def lifespan(_app: FastAPI):
             BUILD_TIMESTAMP,
             extra={"web_url": settings.web_public_url, "api_url": settings.api_public_url},
         )
-    import threading
 
-    # /health debe responder ya. Stripe/Retell/Llama no pueden bloquear el bind.
+    po_stop = None
+    retell_health_stop = None
+    sentinel_stop = None
+
     def _boot_side_effects() -> None:
         if not settings.openai_api_key.strip():
             logger.warning("OPENAI_API_KEY vacía — voz Realtime no funcionará")
         elif not settings.tavily_api_key.strip():
             logger.warning("TAVILY_API_KEY vacía — búsqueda web en voz fallará")
-        if settings.voice_provider == "retell":
-            if not settings.retell_api_key.strip():
-                logger.warning("RETELL_API_KEY vacía — voz Retell no funcionará")
-            else:
-                from app.services.retell_agent_setup import bootstrap_retell_if_needed
+        if settings.voice_provider == "retell" and settings.retell_api_key.strip():
+            from app.services.retell_agent_setup import bootstrap_retell_if_needed
 
-                bootstrap_retell_if_needed()
+            bootstrap_retell_if_needed()
+        elif settings.voice_provider == "retell":
+            logger.warning("RETELL_API_KEY vacía — voz Retell no funcionará")
         try:
             from app.services.stripe_billing import ensure_stripe_plan_price
 
@@ -107,42 +111,41 @@ async def lifespan(_app: FastAPI):
         except Exception:  # noqa: BLE001
             logger.exception("No se pudo asegurar producto Stripe CED Cierre al arranque")
 
-    threading.Thread(target=_boot_side_effects, name="ced-boot", daemon=True).start()
+    async def _after_listen() -> None:
+        nonlocal po_stop, retell_health_stop, sentinel_stop
+        await asyncio.sleep(0)
+        threading.Thread(target=_boot_side_effects, name="ced-boot", daemon=True).start()
+        try:
+            from app.services.pocket_option.worker import (
+                start_worker_if_enabled,
+                stop_worker as po_stop_worker,
+            )
 
-    po_stop = None
-    try:
-        from app.services.pocket_option.worker import (
-            start_worker_if_enabled,
-            stop_worker as po_stop_worker,
-        )
+            start_worker_if_enabled()
+            po_stop = po_stop_worker
+        except Exception:  # noqa: BLE001
+            logger.exception("Pocket Option worker no arrancó")
+        try:
+            from app.services.retell_provider_health import (
+                start_monitor_if_enabled,
+                stop_monitor as retell_stop_monitor,
+            )
 
-        start_worker_if_enabled()
-        po_stop = po_stop_worker
-    except Exception:  # noqa: BLE001
-        logger.exception("Pocket Option worker no arrancó")
+            start_monitor_if_enabled()
+            retell_health_stop = retell_stop_monitor
+        except Exception:  # noqa: BLE001
+            logger.exception("Retell health monitor no arrancó")
+        try:
+            from app.services.ced_sentinel import resume_if_enabled, stop_monitor
 
-    retell_health_stop = None
-    try:
-        from app.services.retell_provider_health import (
-            start_monitor_if_enabled,
-            stop_monitor as retell_stop_monitor,
-        )
+            resume_if_enabled()
+            sentinel_stop = stop_monitor
+        except Exception:  # noqa: BLE001
+            logger.exception("Centinela no arrancó")
 
-        start_monitor_if_enabled()
-        retell_health_stop = retell_stop_monitor
-    except Exception:  # noqa: BLE001
-        logger.exception("Retell health monitor no arrancó")
-
-    sentinel_stop = None
-    try:
-        from app.services.ced_sentinel import resume_if_enabled, stop_monitor
-
-        resume_if_enabled()
-        sentinel_stop = stop_monitor
-    except Exception:  # noqa: BLE001
-        logger.exception("Centinela no arrancó")
-
+    boot_task = asyncio.create_task(_after_listen(), name="ced-after-listen")
     yield
+    boot_task.cancel()
 
     if po_stop is not None:
         try:
