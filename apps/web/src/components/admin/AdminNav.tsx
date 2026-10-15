@@ -14,7 +14,7 @@ const LINKS = [
   ...(SUPPORT_CHAT_ENABLED ? [{ href: "/admin/support", label: "Soporte" }] : []),
   { href: "/admin/monitoring", label: "Monitoreo" },
   { href: "/admin/sentinel", label: "Centinela" },
-  { href: "/admin/sentinel-privacy", label: "Sentinel cobros" },
+  { href: "/admin/sentinel-privacy", label: "Sentinel" },
   { href: "/admin/herramientas", label: "Herramientas" },
   { href: "/admin/pocket-option", label: "PO Demo" },
 ];

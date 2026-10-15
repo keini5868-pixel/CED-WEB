@@ -5,6 +5,7 @@ import { useCallback, useEffect, useState } from "react";
 
 import { HudPanel } from "@ced/ui";
 
+import { SentinelModulePanel } from "@/components/sentinel/SentinelModulePanel";
 import {
   ensureSentinelPrivacyStripeProducts,
   fetchAdminSentinelPrivacy,
@@ -51,18 +52,13 @@ export default function AdminSentinelPrivacyPage() {
 
   return (
     <div className="space-y-6 p-4">
-      <HudPanel title="SENTINEL PRIVACY · COBROS (ADMIN)">
+      <SentinelModulePanel forceFull />
+
+      <HudPanel title="COBROS STRIPE (SOLO ADMIN)">
         <p className="ced-hud-text-body max-w-3xl">
-          Esta pantalla es <strong className="font-normal">solo back-office</strong> (Stripe y
-          suscripciones). El módulo que usa el cliente está en CED:{" "}
-          <Link href="/dashboard/sentinel" className="text-violet-200 underline">
-            Sistema → Sentinel
-          </Link>
-          {" · "}
-          <Link href="/dashboard/sentinel" className="text-cyan-300 underline">
-            /dashboard/sentinel
-          </Link>
-          . No confundir con <strong className="font-normal">Centinela Ops</strong> (QA voz/imagen).
+          El módulo de arriba ya está abierto para tu cuenta admin. Los usuarios
+          nuevos ven candado en Sistema → Sentinel hasta Founding o Sentinel
+          $200/mes. Distinto de Centinela Ops (QA voz/imagen).
         </p>
         {data ? (
           <p className="mt-2 text-xs text-violet-300/90">
@@ -74,12 +70,6 @@ export default function AdminSentinelPrivacyPage() {
         ) : null}
         {error ? <p className="mt-3 text-sm text-red-400">{error}</p> : null}
         <div className="mt-4 flex flex-wrap gap-2">
-          <Link
-            href="/dashboard/sentinel"
-            className="rounded border border-violet-400 bg-violet-500/20 px-3 py-2 text-[10px] font-bold uppercase tracking-wider text-violet-50 hover:bg-violet-500/30"
-          >
-            Abrir módulo en CED
-          </Link>
           <button
             type="button"
             disabled={busy}

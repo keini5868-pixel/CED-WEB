@@ -148,8 +148,16 @@ function SectionGrid({ tier }: { tier: SentinelTier }) {
   );
 }
 
-export function SentinelModulePanel() {
-  const { loaded, tier, entitlement } = useSentinelAccess();
+export function SentinelModulePanel({
+  forceFull = false,
+}: {
+  /** Super admin / panel interno: entra al pack completo sin Stripe. */
+  forceFull?: boolean;
+}) {
+  const access = useSentinelAccess();
+  const loaded = forceFull || access.loaded;
+  const tier = forceFull ? "full" : access.tier;
+  const entitlement = access.entitlement;
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 

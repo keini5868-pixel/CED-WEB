@@ -26,8 +26,8 @@ export default function AdminPage() {
           onClick={() => router.push("/admin/sentinel-privacy")}
           className="flex w-full items-center justify-between gap-3 rounded border-2 border-violet-400/70 bg-violet-500/15 px-4 py-3 text-left font-[family-name:var(--font-orbitron)] text-xs font-bold tracking-[0.16em] text-violet-100 shadow-[0_0_16px_rgba(120,80,255,0.35)] transition hover:bg-violet-500/25"
         >
-          <span>SENTINEL COBROS</span>
-          <span className="text-[10px] text-violet-200/80">STRIPE</span>
+          <span>SENTINEL</span>
+          <span className="text-[10px] text-violet-200/80">MÓDULO</span>
         </button>
       </div>
       <HudPanel title="USUARIOS REGISTRADOS" className="col-span-full">
