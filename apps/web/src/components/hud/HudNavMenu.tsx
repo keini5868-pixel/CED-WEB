@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useCallback, useEffect, useId, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { ChevronDown } from "lucide-react";
+import { ChevronDown, Lock } from "lucide-react";
 
 import { registerPresenterCloser } from "@/lib/voice/presenterCloseBus";
 
@@ -13,6 +13,7 @@ export type HudNavItem = {
   href?: string;
   onClick?: () => void;
   hidden?: boolean;
+  locked?: boolean;
 };
 
 type HudNavMenuProps = {
@@ -118,9 +119,12 @@ export function HudNavMenu({ label, items, align = "left", tone = "hud", hotspot
                     item.onClick?.();
                     setOpen(false);
                   }}
-                  className="block px-3 py-2 text-left text-[11px] font-medium tracking-wide text-cyan-100/90 hover:bg-cyan-400/10 hover:text-cyan-50"
+                  className="flex items-center justify-between gap-2 px-3 py-2 text-left text-[11px] font-medium tracking-wide text-cyan-100/90 hover:bg-cyan-400/10 hover:text-cyan-50"
                 >
-                  {item.label}
+                  <span>{item.label}</span>
+                  {item.locked ? (
+                    <Lock className="h-3 w-3 shrink-0 text-violet-300/80" aria-hidden />
+                  ) : null}
                 </Link>
               ) : (
                 <button
@@ -132,9 +136,12 @@ export function HudNavMenu({ label, items, align = "left", tone = "hud", hotspot
                     item.onClick?.();
                     setOpen(false);
                   }}
-                  className="block w-full px-3 py-2 text-left text-[11px] font-medium tracking-wide text-cyan-100/90 hover:bg-cyan-400/10 hover:text-cyan-50"
+                  className="flex w-full items-center justify-between gap-2 px-3 py-2 text-left text-[11px] font-medium tracking-wide text-cyan-100/90 hover:bg-cyan-400/10 hover:text-cyan-50"
                 >
-                  {item.label}
+                  <span>{item.label}</span>
+                  {item.locked ? (
+                    <Lock className="h-3 w-3 shrink-0 text-violet-300/80" aria-hidden />
+                  ) : null}
                 </button>
               ),
             )}

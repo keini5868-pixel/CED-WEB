@@ -85,6 +85,13 @@ const OPEN_RULES: Rule[] = [
     ],
   },
   {
+    re: /\b(sentinel|sentinela|privacidad\s+verificable)\b/i,
+    steps: [
+      { hotspot: "sistema", click: true, force: "open" },
+      { hotspot: "nav-sentinel", click: true },
+    ],
+  },
+  {
     re: /\b(planes?|suscripci[oó]n|membres[ií]a)\b/i,
     steps: [
       { hotspot: "sistema", click: true, force: "open" },
@@ -264,6 +271,7 @@ const OPEN_FALLBACK: Record<string, string> = {
   "nav-media": "/historial?tab=archivos",
   "nav-trash": "/historial?tab=papelera",
   "nav-plans": "/dashboard/plans",
+  "nav-sentinel": "/dashboard/sentinel",
   "nav-account": "/dashboard/account",
   "nav-whatsapp": "/dashboard/automatizacion",
   "nav-automatizacion": "/dashboard/automatizacion",

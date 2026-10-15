@@ -17,6 +17,36 @@ function billingErrorMessage(status: number, detail?: string): string {
   return detail || "No se pudo iniciar el pago.";
 }
 
+export type SentinelEntitlement = {
+  active?: boolean;
+  plan_id?: string | null;
+  seals_per_month?: number;
+  seals_used_in_period?: number;
+  seals_remaining?: number;
+  ced_included_cap?: number;
+  sentinel_addon_cap?: number;
+  status?: string;
+};
+
+export async function fetchSentinelSubscription(): Promise<{
+  subscription: Record<string, unknown> | null;
+  entitlement: SentinelEntitlement;
+}> {
+  const res = await proxyFetchAuthed("billing/sentinel-subscription", { method: "GET" });
+  const data = await parseApiJson<{
+    subscription?: Record<string, unknown> | null;
+    entitlement?: SentinelEntitlement;
+    detail?: string;
+  }>(res);
+  if (!res.ok) {
+    throw new Error(data.detail || "No se pudo leer Sentinel.");
+  }
+  return {
+    subscription: data.subscription ?? null,
+    entitlement: data.entitlement ?? {},
+  };
+}
+
 export async function startSentinelPrivacyCheckout(planId: string): Promise<string | null> {
   const res = await proxyFetchAuthed("billing/checkout/sentinel-privacy", {
     method: "POST",

@@ -16,6 +16,13 @@ describe("matchPresenterGuide", () => {
     ]);
   });
 
+  it("sentinel abre Sistema y luego Sentinel", () => {
+    expect(matchPresenterGuide("abre sentinel")).toEqual([
+      { hotspot: "sistema", click: true, force: "open" },
+      { hotspot: "nav-sentinel", click: true },
+    ]);
+  });
+
   it("cierra todo y cierra Sistema", () => {
     expect(matchPresenterGuide("cerrar")).toEqual([{ action: "close-all" }]);
     expect(matchPresenterGuide("cierra todo")).toEqual([{ action: "close-all" }]);

@@ -13,11 +13,13 @@ import { useConnectNetworks } from "@/components/hud/useConnectNetworks";
 import { SignOutButton } from "@/components/auth/SignOutButton";
 import { useDriveMap } from "@/contexts/DriveMapContext";
 import { CedWordmark } from "@/components/brand/CedWordmark";
+import { useSentinelAccess } from "@/hooks/useSentinelAccess";
 import {
   ACCOUNT_PATH,
   AUTOMATION_PATH,
   COMMUNITY_PATH,
   DASHBOARD_PATH,
+  SENTINEL_PATH,
 } from "@/lib/auth/paths";
 import {
   dispatchCedOpenSettings,
@@ -36,6 +38,7 @@ export function HudChrome({ email, isSuperAdmin }: HudChromeProps) {
   const { openDriveMap } = useDriveMap();
   const onDashboard = isDashboardPath(pathname);
   const { status: metaStatus, busy: metaBusy, connect: connectMeta } = useConnectNetworks();
+  const { loaded: sentinelLoaded, tier: sentinelTier } = useSentinelAccess();
 
   useEffect(() => {
     const goHome = (ev: Event) => {
@@ -81,6 +84,12 @@ export function HudChrome({ email, isSuperAdmin }: HudChromeProps) {
       tone="navy"
       items={[
         { id: "plans", label: "Planes", href: "/dashboard/plans" },
+        {
+          id: "sentinel",
+          label: "Sentinel",
+          href: SENTINEL_PATH,
+          locked: sentinelLoaded && sentinelTier === "locked",
+        },
         { id: "comunidad", label: "Sala CED", href: COMMUNITY_PATH },
         { id: "account", label: "Cuentas", href: ACCOUNT_PATH },
         { id: "networks", label: metaMenuLabel, onClick: () => void connectMeta() },
