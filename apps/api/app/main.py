@@ -83,44 +83,31 @@ async def lifespan(_app: FastAPI):
             BUILD_TIMESTAMP,
             extra={"web_url": settings.web_public_url, "api_url": settings.api_public_url},
         )
-    if not settings.openai_api_key.strip():
-        logger.warning("OPENAI_API_KEY vacía — voz Realtime no funcionará")
-    elif not settings.tavily_api_key.strip():
-        logger.warning("TAVILY_API_KEY vacía — búsqueda web en voz fallará")
-    if settings.voice_provider == "retell":
-        if not settings.retell_api_key.strip():
-            logger.warning("RETELL_API_KEY vacía — voz Retell no funcionará")
-        else:
-            from app.services.llama_service import llama_available, llama_model, use_llama
+    import threading
 
-            if use_llama():
-                logger.info(
-                    "LLM provider=llama model=%s endpoint=%s available=%s",
-                    llama_model(),
-                    settings.llama_endpoint,
-                    llama_available(),
-                )
-            elif not settings.google_api_key.strip():
-                logger.warning("GOOGLE_API_KEY vacía — cerebro Gemini voz no funcionará")
-            import threading
+    # /health debe responder ya. Stripe/Retell/Llama no pueden bloquear el bind.
+    def _boot_side_effects() -> None:
+        if not settings.openai_api_key.strip():
+            logger.warning("OPENAI_API_KEY vacía — voz Realtime no funcionará")
+        elif not settings.tavily_api_key.strip():
+            logger.warning("TAVILY_API_KEY vacía — búsqueda web en voz fallará")
+        if settings.voice_provider == "retell":
+            if not settings.retell_api_key.strip():
+                logger.warning("RETELL_API_KEY vacía — voz Retell no funcionará")
+            else:
+                from app.services.retell_agent_setup import bootstrap_retell_if_needed
 
-            from app.services.retell_agent_setup import bootstrap_retell_if_needed
+                bootstrap_retell_if_needed()
+        try:
+            from app.services.stripe_billing import ensure_stripe_plan_price
 
-            # No bloquear /health: Retell a veces tarda > 90 s y Railway mata el deploy.
-            threading.Thread(
-                target=bootstrap_retell_if_needed,
-                name="retell-bootstrap",
-                daemon=True,
-            ).start()
+            if settings.stripe_secret_key.strip():
+                price_id = ensure_stripe_plan_price("cierre", settings)
+                logger.info("Stripe CED Cierre listo price_id=%s", price_id)
+        except Exception:  # noqa: BLE001
+            logger.exception("No se pudo asegurar producto Stripe CED Cierre al arranque")
 
-    try:
-        from app.services.stripe_billing import ensure_stripe_plan_price
-
-        if settings.stripe_secret_key.strip():
-            price_id = ensure_stripe_plan_price("cierre", settings)
-            logger.info("Stripe CED Cierre listo price_id=%s", price_id)
-    except Exception:  # noqa: BLE001
-        logger.exception("No se pudo asegurar producto Stripe CED Cierre al arranque")
+    threading.Thread(target=_boot_side_effects, name="ced-boot", daemon=True).start()
 
     po_stop = None
     try:

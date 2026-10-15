@@ -45,14 +45,6 @@ router = APIRouter(tags=["health"])
 @limiter.exempt
 def health(_request: Request) -> dict[str, str]:
     """Liveness probe — en producción solo campos mínimos (sin inventario de claves)."""
-    from app.services.llama_service import (
-        llama_health_diagnostics,
-        llama_model,
-        llama_voice_health_diagnostics,
-        llama_voice_model,
-        use_llama,
-    )
-
     settings = get_settings()
     payload: dict[str, str] = {
         "status": "ok",
@@ -63,6 +55,14 @@ def health(_request: Request) -> dict[str, str]:
     }
     if settings.is_production():
         return payload
+
+    from app.services.llama_service import (
+        llama_health_diagnostics,
+        llama_model,
+        llama_voice_health_diagnostics,
+        llama_voice_model,
+        use_llama,
+    )
 
     payload["llm_provider"] = settings.llm_provider
     payload["pid"] = str(os.getpid())
