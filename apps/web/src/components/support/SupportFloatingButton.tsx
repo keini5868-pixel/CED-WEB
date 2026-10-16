@@ -23,6 +23,7 @@ export default function SupportFloatingButton() {
     pathname?.startsWith("/dashboard/automatizacion") ||
     pathname === "/dashboard" ||
     pathname === "/app" ||
+    pathname === "/soporte" ||
     textChatOpen;
 
   const fetchCount = useCallback(() => fetchUserSupportUnreadCount(), []);

@@ -20,6 +20,8 @@ import {
 type Props = {
   onClose: () => void;
   onMessageRead: () => void;
+  /** `page` ocupa la pantalla. Lo usa /soporte. */
+  layout?: "dock" | "page";
 };
 
 function formatTime(iso?: string): string {
@@ -71,7 +73,11 @@ function CategoryPicker({
   );
 }
 
-export default function SupportChatPanel({ onClose, onMessageRead }: Props) {
+export default function SupportChatPanel({
+  onClose,
+  onMessageRead,
+  layout = "dock",
+}: Props) {
   const [mounted, setMounted] = useState(false);
   const [loading, setLoading] = useState(true);
   const [conversation, setConversation] = useState<SupportConversation | null>(null);
@@ -201,7 +207,13 @@ export default function SupportChatPanel({ onClose, onMessageRead }: Props) {
   if (!mounted) return null;
 
   return createPortal(
-    <div className="fixed inset-0 z-[130] flex flex-col overflow-hidden border-cyan-500/30 bg-[#0a0f18] shadow-2xl sm:inset-auto sm:bottom-24 sm:right-6 sm:h-[min(560px,calc(100vh-7rem))] sm:w-[min(380px,calc(100vw-1.5rem))] sm:rounded-2xl sm:border">
+    <div
+      className={
+        layout === "page"
+          ? "fixed inset-0 z-[130] flex flex-col overflow-hidden bg-[#0a0f18]"
+          : "fixed inset-0 z-[130] flex flex-col overflow-hidden border-cyan-500/30 bg-[#0a0f18] shadow-2xl sm:inset-auto sm:bottom-24 sm:right-6 sm:h-[min(560px,calc(100vh-7rem))] sm:w-[min(380px,calc(100vw-1.5rem))] sm:rounded-2xl sm:border"
+      }
+    >
       <header className="flex shrink-0 items-center justify-between border-b border-cyan-500/20 bg-gradient-to-r from-purple-900/40 to-blue-900/40 px-4 pb-3 pt-[max(0.75rem,env(safe-area-inset-top))] sm:py-3">
         <div className="flex min-w-0 flex-1 items-center gap-2">
           <button

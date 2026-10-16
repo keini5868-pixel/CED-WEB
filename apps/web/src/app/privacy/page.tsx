@@ -5,7 +5,7 @@ import { LegalPageShell } from "@/components/layout/LegalPageShell";
 export const metadata: Metadata = {
   title: "Política de Privacidad — CED",
   description:
-    "Política de Privacidad de CED (Castillo de la Evolución Digital). Última actualización: 22 de julio de 2026.",
+    "Política de Privacidad de CED (Castillo de la Evolución Digital). Última actualización: 16 de octubre de 2026.",
   robots: { index: true, follow: true },
 };
 
@@ -13,7 +13,7 @@ export default function PrivacyPage() {
   return (
     <LegalPageShell
       title="Politica de Privacidad de CED"
-      updated="Ultima actualizacion: 22 de julio de 2026"
+      updated="Ultima actualizacion: 16 de octubre de 2026"
     >
       <section>
         <h2>1. Quienes somos</h2>
@@ -163,7 +163,38 @@ export default function PrivacyPage() {
       </section>
 
       <section>
-        <h2>10. Contacto</h2>
+        <h2>10. Extension de Chrome Sentinel Privacy</h2>
+        <p>
+          La extension Sentinel Privacy for CED aplica en el navegador la
+          politica que activas en CED. No envia tus URLs a CED ni a un servidor
+          nuestro.
+        </p>
+        <ul>
+          <li>
+            Quita parametros de rastreo de los enlaces que abres, en el propio
+            navegador.
+          </li>
+          <li>
+            Si dejas activo el DNS seguro, Chrome usa Cloudflare para resolver
+            nombres de sitio.
+          </li>
+          <li>
+            Si enciendes un filtro de busqueda, la extension lee el texto de
+            esa busqueda solo para aplicar el filtro. No guarda esa consulta ni
+            la envia.
+          </li>
+          <li>
+            Los interruptores y un contador local se guardan en el dispositivo.
+          </li>
+        </ul>
+        <p>
+          La lista de malware incluida es corta y de dominios de prueba. No es
+          un antivirus completo. Soporte: ced-castillo.com/soporte.
+        </p>
+      </section>
+
+      <section>
+        <h2>11. Contacto</h2>
         <p>
           Si tienes preguntas sobre esta politica de privacidad, contactanos en:
           keini5868@gmail.com
