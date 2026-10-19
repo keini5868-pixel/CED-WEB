@@ -3,6 +3,8 @@ import { proxyFetchAuthed, streamAuthHeaders } from "@/lib/api/ced-proxy";
 import { coerceDisplayText, formatApiDetail } from "@/lib/display-text";
 import { parseApiJson } from "@/lib/api/http";
 import { appendStreamChunk } from "@/lib/stream-chunk";
+import { sentinelChatReply } from "@/lib/sentinel/policy";
+
 export type AdvancedChatMessage = {
   role: "user" | "assistant";
   content: string;
@@ -39,6 +41,12 @@ export type AdvancedChatResult = {
   } | null;
 };
 
+function sentinelAdvancedHit(message: string): AdvancedChatResult | null {
+  const gated = sentinelChatReply(message);
+  if (!gated) return null;
+  return { response: gated, model: "sentinel-policy" };
+}
+
 /** Bienvenida instantánea — no esperar a /advanced/status. */
 export const ADVANCED_DEFAULT_WELCOME =
   "Modo avanzado listo. ¿Qué analizamos, señor?";
@@ -67,6 +75,11 @@ export async function sendAdvancedChatMessageStream(
   onToken: (chunk: string) => void,
   onStatus?: (text: string) => void,
 ): Promise<AdvancedChatResult> {
+  const local = sentinelAdvancedHit(message);
+  if (local) {
+    onToken(local.response);
+    return local;
+  }
   const clientRequestId =
     typeof crypto !== "undefined" && "randomUUID" in crypto
       ? crypto.randomUUID()
@@ -265,6 +278,8 @@ export async function sendAdvancedChatMessage(
   message: string,
   history: AdvancedChatMessage[],
 ): Promise<AdvancedChatResult> {
+  const local = sentinelAdvancedHit(message);
+  if (local) return local;
   const res = await proxyFetchAuthed("advanced/chat", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -296,6 +311,8 @@ export async function sendAdvancedChatMessageWithImage(
   image: File,
   imageMode: AdvancedImageMode = "analyze",
 ): Promise<AdvancedChatResult> {
+  const local = sentinelAdvancedHit(message);
+  if (local) return local;
   const formData = new FormData();
   formData.append("content", message);
   formData.append("image_mode", imageMode);
@@ -338,6 +355,8 @@ export async function sendAdvancedChatMessageWithPdf(
   history: AdvancedChatMessage[],
   pdf: File,
 ): Promise<AdvancedChatResult> {
+  const local = sentinelAdvancedHit(message);
+  if (local) return local;
   const formData = new FormData();
   formData.append("content", message);
   formData.append(

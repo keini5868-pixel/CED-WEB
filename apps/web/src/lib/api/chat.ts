@@ -6,6 +6,7 @@ import {
 import { appendStreamChunk } from "@/lib/stream-chunk";
 import { coerceDisplayText, formatApiDetail } from "@/lib/display-text";
 import { parseApiJson } from "@/lib/api/http";
+import { sentinelChatReply } from "@/lib/sentinel/policy";
 
 const CHAT_TIMEOUT_MS = COTIDIAN_CHAT_TIMEOUT_MS;
 const CHAT_STREAM_STALL_MS = COTIDIAN_STREAM_STALL_MS;
@@ -113,6 +114,21 @@ export async function sendChatMessage(
   recharge_needed?: ChatRechargeNeeded | null;
   open_module?: ChatOpenModule | null;
 }> {
+  const gated = sentinelChatReply(content);
+  if (gated) {
+    onToken?.(gated);
+    return {
+      conversation_id: conversationId || "",
+      reply: gated,
+      usage: {
+        messages_used_today: 0,
+        messages_limit_daily: null,
+        unlimited: true,
+        remaining_today: null,
+        blocked: false,
+      },
+    };
+  }
   if (pdf) {
     return sendChatMessageBlocking(
       content,

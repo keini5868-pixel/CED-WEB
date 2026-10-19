@@ -165,9 +165,17 @@ export default function PrivacyPage() {
       <section>
         <h2>10. Extension de Chrome Sentinel Privacy</h2>
         <p>
-          La extension Sentinel Privacy for CED aplica en el navegador la
-          politica que activas en CED. No envia tus URLs a CED ni a un servidor
-          nuestro.
+          La extension{" "}
+          <a
+            href="https://chromewebstore.google.com/detail/sentinel-privacy-for-ced/lljjmaaeaablafifigijmfclaakglphi"
+            className="text-cyan-300 underline hover:text-cyan-100"
+            target="_blank"
+            rel="noopener noreferrer"
+          >
+            Sentinel Privacy for CED
+          </a>{" "}
+          aplica en el navegador la politica que activas en CED. No envia tus
+          URLs a CED ni a un servidor nuestro.
         </p>
         <ul>
           <li>

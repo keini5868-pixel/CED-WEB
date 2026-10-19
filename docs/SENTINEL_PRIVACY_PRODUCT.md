@@ -29,10 +29,19 @@ Landing: `/sentinel-privacy`
 
 Migración `046_sentinel_privacy_subscriptions.sql` — tabla `sentinel_privacy_subscriptions`.
 
+## Qué está activo ahora
+
+- **HUD** `/dashboard/sentinel`: interruptores persistidos en el dispositivo.
+- **Chat / avanzado:** si explosivos, armas o autolesión están ON, el texto no se envía al modelo.
+- **Extensión MV3** (`apps/web/public/sentinel-extension`): malware (DNR), DoH Cloudflare, quitar rastreadores de URLs, categorías en búsquedas. Publicada en Chrome Web Store: [Sentinel Privacy for CED](https://chromewebstore.google.com/detail/sentinel-privacy-for-ced/lljjmaaeaablafifigijmfclaakglphi) (ID `lljjmaaeaablafifigijmfclaakglphi`, v0.1.0, 18 oct 2026).
+- **Equipo:** enlace de política (sin historial de URLs). Workspace puede forzar ese ID.
+- **Jueces / AKINDO:** el loop sigue siendo `/shield` (sin login). Sentinel refuerza el dual-ledger: consultas locales vs sello hash.
+
 ## Shield
 
 - Kill-switch global: `CED_SHIELD_ENABLED` (prod = false).
 - Con Shield ON, `/v1/shield/seal` exige suscripción Sentinel activa y descuenta 1 sello al sellar.
+- No se activa al abrir el módulo HUD. Jarvis / voz / Retell no entran.
 
 ## Centinela Ops
 

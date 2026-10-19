@@ -15,8 +15,17 @@ import Link from "next/link";
 
 import { SENTINEL_PRIVACY_PRODUCT } from "@ced/types";
 
-import { useSentinelAccess, type SentinelTier } from "@/hooks/useSentinelAccess";
+import { useIsSuperAdminClient } from "@/hooks/useIsSuperAdminClient";
+import { useSentinelAccess } from "@/hooks/useSentinelAccess";
+import { useSentinelPolicy } from "@/hooks/useSentinelPolicy";
 import { startSentinelPrivacyCheckout } from "@/lib/api/billing";
+import {
+  encodePolicyShare,
+  SENTINEL_CHROME_EXTENSION_ID,
+  SENTINEL_CHROME_STORE_URL,
+  type SentinelExtStats,
+  type SentinelPolicy,
+} from "@/lib/sentinel/policy";
 
 type SectionId = "estado" | "navegador" | "sellos" | "politicas" | "equipo";
 
@@ -85,24 +94,44 @@ function UnlockActions({ busy, onUnlock }: { busy: boolean; onUnlock: () => void
   );
 }
 
+function ToggleRow({
+  label,
+  checked,
+  onChange,
+}: {
+  label: string;
+  checked: boolean;
+  onChange: (next: boolean) => void;
+}) {
+  return (
+    <label className="flex items-center justify-between gap-3 rounded border border-violet-400/25 px-3 py-2">
+      <span>{label}</span>
+      <input
+        type="checkbox"
+        checked={checked}
+        onChange={(e) => onChange(e.target.checked)}
+      />
+    </label>
+  );
+}
+
 function SectionBody({
   id,
   remaining,
   cap,
+  policy,
+  patch,
+  stats,
+  isAdmin,
 }: {
   id: SectionId;
   remaining: number;
   cap: number;
+  policy: SentinelPolicy;
+  patch: (partial: Partial<SentinelPolicy>) => void;
+  stats: SentinelExtStats;
+  isAdmin: boolean;
 }) {
-  const [malware, setMalware] = useState(true);
-  const [doh, setDoh] = useState(true);
-  const [trackers, setTrackers] = useState(true);
-  const [cats, setCats] = useState({
-    explosivos: false,
-    armas: false,
-    autolesion: false,
-  });
-
   if (id === "estado") {
     return (
       <div className="space-y-2 text-sm text-cyan-100/80">
@@ -110,8 +139,24 @@ function SectionBody({
           Módulo <strong className="text-violet-200">completo</strong> en esta cuenta.
         </p>
         <p>
-          Navegador: extensión aún no instalada — las amenazas bloqueadas se verán
-          aquí cuando se conecte.
+          Extensión:{" "}
+          {stats.connected ? (
+            <strong className="text-emerald-300">conectada</strong>
+          ) : (
+            <strong className="text-amber-200">no detectada</strong>
+          )}
+          {stats.connected
+            ? ` · amenazas bloqueadas ${stats.blocked} · rastreadores quitados ${stats.stripped}`
+            : " — instálala desde Chrome Web Store para aplicar malware, DoH y rastreadores en Chrome."}
+        </p>
+        <p>
+          Políticas en chat CED:{" "}
+          {policy.explosivos || policy.armas || policy.autolesion ? (
+            <strong className="text-violet-200">activas</strong>
+          ) : (
+            <span>apagadas (por defecto en individuos)</span>
+          )}
+          . El texto no sale de este dispositivo si hay bloqueo.
         </p>
         <p>
           Sellos este periodo:{" "}
@@ -121,8 +166,8 @@ function SectionBody({
           </strong>
         </p>
         <p className="text-xs text-cyan-500">
-          Shield on-chain sigue con kill-switch de servidor; no se activa solo al
-          abrir este panel.
+          Shield on-chain sigue con kill-switch de servidor. Jarvis y voz no entran
+          en ese riel. Los jueces demuestran el sello en /shield.
         </p>
       </div>
     );
@@ -131,33 +176,43 @@ function SectionBody({
     return (
       <div className="space-y-3 text-sm text-cyan-100/80">
         <p>
-          Chrome/Edge (Manifest V3). La ficha de la Chrome Web Store llega en la
-          siguiente fase; aquí ya queda el control.
+          Chrome/Edge Manifest V3. Estos interruptores se guardan ya y la extensión
+          los aplica en el navegador (no pasan por CED).
         </p>
-        <label className="flex items-center justify-between gap-3 rounded border border-violet-400/25 px-3 py-2">
-          <span>Bloquear malware / phishing conocido</span>
-          <input
-            type="checkbox"
-            checked={malware}
-            onChange={(e) => setMalware(e.target.checked)}
-          />
-        </label>
-        <label className="flex items-center justify-between gap-3 rounded border border-violet-400/25 px-3 py-2">
-          <span>DNS cifrado (DoH · Cloudflare 1.1.1.1)</span>
-          <input type="checkbox" checked={doh} onChange={(e) => setDoh(e.target.checked)} />
-        </label>
-        <label className="flex items-center justify-between gap-3 rounded border border-violet-400/25 px-3 py-2">
-          <span>Quitar rastreadores de URLs</span>
-          <input
-            type="checkbox"
-            checked={trackers}
-            onChange={(e) => setTrackers(e.target.checked)}
-          />
-        </label>
-        <p className="text-xs text-cyan-600">
-          Los interruptores se guardan en este navegador hasta que la extensión los
-          aplique de verdad.
-        </p>
+        <ToggleRow
+          label="Bloquear malware / phishing conocido"
+          checked={policy.malware}
+          onChange={(v) => patch({ malware: v })}
+        />
+        <ToggleRow
+          label="DNS cifrado (DoH · Cloudflare 1.1.1.1)"
+          checked={policy.doh}
+          onChange={(v) => patch({ doh: v })}
+        />
+        <ToggleRow
+          label="Quitar rastreadores de URLs"
+          checked={policy.trackers}
+          onChange={(v) => patch({ trackers: v })}
+        />
+        {stats.connected ? (
+          <p className="text-xs text-emerald-400">
+            Extensión activa. Bloqueos {stats.blocked} · rastreadores {stats.stripped}{" "}
+            · políticas {stats.policyHits}. Sin historial de URLs.
+          </p>
+        ) : (
+          <p className="text-xs text-cyan-400">
+            Añádela en Chrome y recarga esta página. El estado debe decir
+            «conectada».
+          </p>
+        )}
+        <a
+          href={SENTINEL_CHROME_STORE_URL}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="inline-block text-violet-200 underline"
+        >
+          Añadir a Chrome
+        </a>
       </div>
     );
   }
@@ -172,9 +227,9 @@ function SectionBody({
           </strong>{" "}
           sellos este periodo.
         </p>
-        <p>El PDF o acuerdo no se sube: solo hash + tiempo.</p>
+        <p>El PDF o acuerdo no se sube: solo hash + tiempo. Midnight no ve el archivo.</p>
         <Link href="/shield" className="inline-block text-violet-200 underline">
-          Abrir demo Shield
+          Demo jueces · Shield
         </Link>
       </div>
     );
@@ -182,34 +237,57 @@ function SectionBody({
   if (id === "politicas") {
     return (
       <div className="space-y-3 text-sm text-cyan-100/80">
-        <p>Filtro local (no se envían búsquedas a CED). Por defecto apagado en individuos.</p>
-        {(
-          [
-            ["explosivos", "Fabricación de explosivos"],
-            ["armas", "Armas"],
-            ["autolesion", "Autolesión — mostrar ayuda, no solo bloqueo"],
-          ] as const
-        ).map(([key, label]) => (
-          <label
-            key={key}
-            className="flex items-center justify-between gap-3 rounded border border-violet-400/25 px-3 py-2"
-          >
-            <span>{label}</span>
-            <input
-              type="checkbox"
-              checked={cats[key]}
-              onChange={(e) => setCats((c) => ({ ...c, [key]: e.target.checked }))}
-            />
-          </label>
-        ))}
+        <p>
+          Filtro local en chat CED y, con la extensión, en búsquedas del navegador.
+          Por defecto apagado en individuos. No se envían búsquedas a CED.
+        </p>
+        <ToggleRow
+          label="Fabricación de explosivos"
+          checked={policy.explosivos}
+          onChange={(v) => patch({ explosivos: v })}
+        />
+        <ToggleRow
+          label="Armas"
+          checked={policy.armas}
+          onChange={(v) => patch({ armas: v })}
+        />
+        <ToggleRow
+          label="Autolesión — mostrar ayuda, no solo bloqueo"
+          checked={policy.autolesion}
+          onChange={(v) => patch({ autolesion: v })}
+        />
       </div>
     );
   }
+  const share =
+    typeof window !== "undefined"
+      ? `${window.location.origin}/dashboard/sentinel?policy=${encodePolicyShare(policy)}`
+      : "";
   return (
-    <div className="space-y-2 text-sm text-cyan-100/80">
-      <p>Esta cuenta es administrador: acceso completo sin invitación.</p>
-      <p>El despliegue a un equipo (Chrome Workspace / políticas) es la fase siguiente.</p>
-      <p className="text-xs text-cyan-600">No se registran URLs ni búsquedas de nadie.</p>
+    <div className="space-y-3 text-sm text-cyan-100/80">
+      <p>
+        {isAdmin
+          ? "Esta cuenta es administrador: acceso completo y puede desplegar la política al equipo."
+          : "Esta cuenta aplica la política al instalar la extensión y abrir el enlace de invitación."}
+      </p>
+      <p>
+        Estadísticas agregadas (sin URLs ni búsquedas): bloqueos {stats.blocked} ·
+        rastreadores {stats.stripped} · políticas {stats.policyHits}.
+      </p>
+      <p className="text-xs text-cyan-600">
+        Chrome Workspace puede forzar la extensión publicada. ID{" "}
+        <code className="text-cyan-300">{SENTINEL_CHROME_EXTENSION_ID}</code>.
+        El equipo sigue usando el enlace de política.
+      </p>
+      {share ? (
+        <button
+          type="button"
+          className="rounded border border-violet-400/50 px-3 py-2 text-violet-100 hover:bg-violet-500/10"
+          onClick={() => void navigator.clipboard.writeText(share)}
+        >
+          Copiar enlace de política para el equipo
+        </button>
+      ) : null}
     </div>
   );
 }
@@ -220,6 +298,8 @@ export function SentinelModulePanel({
   forceFull?: boolean;
 }) {
   const access = useSentinelAccess();
+  const { isAdmin } = useIsSuperAdminClient();
+  const { policy, patch, stats } = useSentinelPolicy();
   const loaded = forceFull || access.loaded;
   const tier = forceFull ? "full" : access.tier;
   const entitlement = access.entitlement;
@@ -283,6 +363,9 @@ export function SentinelModulePanel({
               Sellos {remaining}
               {cap ? ` / ${cap}` : ""} este periodo
             </span>
+            <span className="text-[11px] text-cyan-500">
+              {stats.connected ? "Extensión conectada" : "Extensión no detectada"}
+            </span>
           </div>
           <div className="space-y-2">
             {SECTIONS.map((section) => {
@@ -326,7 +409,15 @@ export function SentinelModulePanel({
                   </button>
                   {expanded ? (
                     <div className="border-t border-violet-400/20 px-4 py-4">
-                      <SectionBody id={section.id} remaining={remaining} cap={cap} />
+                      <SectionBody
+                        id={section.id}
+                        remaining={remaining}
+                        cap={cap}
+                        policy={policy}
+                        patch={patch}
+                        stats={stats}
+                        isAdmin={isAdmin}
+                      />
                     </div>
                   ) : null}
                 </div>
