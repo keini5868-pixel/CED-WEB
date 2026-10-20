@@ -26,6 +26,7 @@ from app.routers import (
     conversations,
     diagnostic,
     health,
+    google_auth,
     hud,
     image_with_reference,
     legal,
@@ -204,6 +205,8 @@ def create_app() -> FastAPI:
         application.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
     application.include_router(health.router)
+    application.include_router(google_auth.router)
+    application.include_router(google_auth.callback_router)
     application.include_router(legal.router)
     application.include_router(diagnostic.router)
     application.include_router(public_auth.router)

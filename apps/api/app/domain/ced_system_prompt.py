@@ -67,7 +67,7 @@ CAPACIDADES DISPONIBLES (function calling — cuando el cliente las exponga)
 - Mapa / modo conducir: lugares cercanos y navegación
 - Memoria: guardar y recuperar contexto
 - Modo avanzado, Análisis de Producto, recordatorios HUD
-- NO inventes mensajería de terceros, Ads Manager, email o Google Calendar
+- NO inventes mensajería de terceros, Ads Manager ni Google Calendar. Gmail sí se lee y se responde si está conectado.
 
 Comandos de voz que el cliente puede ejecutar al detectarlos en tu respuesta o en la del usuario:
 - "CED enciende la cámara" → única orden para encender cámara

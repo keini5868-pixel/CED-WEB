@@ -29,9 +29,10 @@ Reglas de tools (schemas = nombre/params; no inventes tools):
 - Tras tool: di el resultado tal cual. No re-llames sin petición nueva.
 - Tools lentas (clima, PDF, búsqueda, cámara, avanzado): invoca YA.
   El filler habla al empezar; tú callas (no «voy a consultar» ni «deme un momento»).
-- Escritura (finanzas/Meta): prepare → «sí» → confirm_*. NUNCA prepare+confirm juntos.
+- Escritura (finanzas/Meta/Gmail): prepare → «sí» → confirm_*. NUNCA prepare+confirm juntos.
   Un «sí» basta si hay borrador. Tras OK: di el mensaje y transition_to_general_assistant.
-- Lecturas: clima→get_environment; hechos/noticias→search_web; finanzas→read_finances.
+- Correo: léeme/mis correos → read_gmail. Enviar o responder → gmail_prepare_send y espera el sí antes de gmail_confirm_send.
+- Lecturas: clima→get_environment; hechos/noticias→search_web; finanzas→read_finances; correo→read_gmail.
 - FitLine/PM/Restorate/Activize: Oportunidades YA. «PM»=PM-International AG (FitLine).
   PROHIBIDO search_web e «investigando». Enlace/OPPS→open_opportunities (verifica patrocinador).
 - Borrar finanzas/historial → send_to_trash. Un aviso y un «sí».
@@ -104,7 +105,7 @@ Eres CED, asistente de voz del Castillo Evolución Digital. Trato SIEMPRE mascul
 Charla casual: responde ya en 1-2 oraciones, sin tools. Acciones/datos: usa la tool correcta.
 PROHIBIDO inventar que ya ejecutaste una acción sin resultado exitoso de tool; si falla, dilo tal cual.
 PROHIBIDO frases de espera vacías («un momento», «voy a buscar») sin invocar la tool.
-PROHIBIDO inventar mensajería de terceros, Ads Manager, email o Google Calendar.
+PROHIBIDO inventar mensajería de terceros o Ads Manager. Gmail sí: leer con read_gmail y enviar solo tras confirmación. No hay Google Calendar.
 {CED_CONFIDENTIALITY_COMPACT}
 """.strip()
 
@@ -374,6 +375,43 @@ GENERAR_PDF_PARAMETERS: dict[str, Any] = {
     },
     "required": ["titulo", "contenido"],
 }
+
+READ_GMAIL_DESCRIPTION = (
+    "Lee la bandeja de Gmail del usuario (últimos correos, un remitente o el cuerpo). No envía nada."
+)
+GMAIL_PREPARE_DESCRIPTION = (
+    "Prepara un correo o una respuesta (para, asunto, cuerpo). NO lo envía. Pide confirmación en voz."
+)
+GMAIL_CONFIRM_DESCRIPTION = "Envía el borrador de correo solo después de un sí explícito."
+GMAIL_CANCEL_DESCRIPTION = "Cancela el borrador de correo sin enviarlo."
+
+READ_GMAIL_PARAMETERS: dict[str, Any] = {
+    "type": "object",
+    "properties": {
+        "query": {
+            "type": "string",
+            "description": "Qué correo leer: bandeja, último, de alguien, o el que acaba de nombrar.",
+        },
+    },
+    "required": ["query"],
+}
+GMAIL_PREPARE_PARAMETERS: dict[str, Any] = {
+    "type": "object",
+    "properties": {
+        "to": {"type": "string", "description": "Destinatario."},
+        "subject": {"type": "string", "description": "Asunto."},
+        "body": {"type": "string", "description": "Cuerpo del mensaje."},
+        "query": {"type": "string", "description": "Frase completa del usuario si faltan campos."},
+    },
+    "required": ["query"],
+}
+GMAIL_CONFIRM_PARAMETERS: dict[str, Any] = {
+    "type": "object",
+    "properties": {
+        "draft_id": {"type": "string", "description": "Id del borrador, si lo tienes."},
+    },
+}
+GMAIL_CANCEL_PARAMETERS: dict[str, Any] = {"type": "object", "properties": {}}
 
 READ_FINANCES_PARAMETERS: dict[str, Any] = {
     "type": "object",
@@ -832,6 +870,50 @@ def build_navigation_status_tool(*, api_public_url: str) -> dict[str, Any]:
     )
 
 
+def build_read_gmail_tool(*, api_public_url: str) -> dict[str, Any]:
+    return _build_custom_tool(
+        api_public_url=api_public_url,
+        name="read_gmail",
+        description=READ_GMAIL_DESCRIPTION,
+        parameters=READ_GMAIL_PARAMETERS,
+        filler="Un momento, revisando su correo, señor.",
+        timeout_ms=24_000,
+    )
+
+
+def build_gmail_prepare_send_tool(*, api_public_url: str) -> dict[str, Any]:
+    return _build_custom_tool(
+        api_public_url=api_public_url,
+        name="gmail_prepare_send",
+        description=GMAIL_PREPARE_DESCRIPTION,
+        parameters=GMAIL_PREPARE_PARAMETERS,
+        filler="Un momento, preparando el correo, señor.",
+        timeout_ms=12_000,
+    )
+
+
+def build_gmail_confirm_send_tool(*, api_public_url: str) -> dict[str, Any]:
+    return _build_custom_tool(
+        api_public_url=api_public_url,
+        name="gmail_confirm_send",
+        description=GMAIL_CONFIRM_DESCRIPTION,
+        parameters=GMAIL_CONFIRM_PARAMETERS,
+        filler="Enviando el correo, señor.",
+        timeout_ms=20_000,
+    )
+
+
+def build_gmail_cancel_send_tool(*, api_public_url: str) -> dict[str, Any]:
+    return _build_custom_tool(
+        api_public_url=api_public_url,
+        name="gmail_cancel_send",
+        description=GMAIL_CANCEL_DESCRIPTION,
+        parameters=GMAIL_CANCEL_PARAMETERS,
+        filler="Un momento, señor.",
+        timeout_ms=8_000,
+    )
+
+
 def build_read_finances_tool(*, api_public_url: str) -> dict[str, Any]:
     return _build_custom_tool(
         api_public_url=api_public_url,
@@ -990,6 +1072,10 @@ def build_native_pilot_states(*, api_public_url: str) -> tuple[list[dict[str, An
         build_stop_drive_navigation_tool(api_public_url=api_public_url),
         build_navigation_status_tool(api_public_url=api_public_url),
         build_read_finances_tool(api_public_url=api_public_url),
+        build_read_gmail_tool(api_public_url=api_public_url),
+        build_gmail_prepare_send_tool(api_public_url=api_public_url),
+        build_gmail_confirm_send_tool(api_public_url=api_public_url),
+        build_gmail_cancel_send_tool(api_public_url=api_public_url),
         build_finance_prepare_write_tool(api_public_url=api_public_url),
         build_finance_confirm_write_tool(api_public_url=api_public_url),
         build_finance_cancel_write_tool(api_public_url=api_public_url),
@@ -1593,6 +1679,121 @@ async def execute_read_finances_tool(
         handler=handle_finance_read_sync,
         empty_query_message="Señor, ¿qué desea consultar de sus finanzas?",
         failure_prefix="No pude consultar sus finanzas",
+    )
+
+
+def _run_gmail_prepare(
+    user_id: str,
+    *,
+    call_id: str,
+    payload: dict[str, Any],
+    args: dict[str, Any],
+) -> dict[str, Any]:
+    from app.services.gmail_send_flow import prepare_gmail_send
+
+    return prepare_gmail_send(
+        user_id,
+        call_id=call_id,
+        to=str(args.get("to") or ""),
+        subject=str(args.get("subject") or ""),
+        body=str(args.get("body") or ""),
+        query=resolve_tool_query(payload, args),
+    )
+
+
+def _run_gmail_confirm(
+    user_id: str,
+    *,
+    call_id: str,
+    payload: dict[str, Any],
+    args: dict[str, Any],
+) -> dict[str, Any]:
+    from app.services.gmail_send_flow import confirm_gmail_send
+
+    return confirm_gmail_send(
+        user_id,
+        call_id=call_id,
+        payload=payload,
+        draft_id=str(args.get("draft_id") or ""),
+    )
+
+
+def _run_gmail_cancel(
+    user_id: str,
+    *,
+    call_id: str,
+    payload: dict[str, Any],
+    args: dict[str, Any],
+) -> dict[str, Any]:
+    del call_id, payload
+    from app.services.gmail_send_flow import cancel_gmail_send
+
+    return cancel_gmail_send(user_id, draft_id=str(args.get("draft_id") or ""))
+
+
+async def execute_read_gmail_tool(
+    *,
+    user_id: str,
+    payload: dict[str, Any],
+    args: dict[str, Any],
+) -> dict[str, Any]:
+    from app.modules.gmail_module import handle_gmail_read_sync
+    from app.services.gmail_send_flow import maybe_clear_gmail_pending_on_topic_change
+
+    maybe_clear_gmail_pending_on_topic_change(user_id, "read_gmail")
+    return await _execute_native_read_tool(
+        tool_name="read_gmail",
+        user_id=user_id,
+        payload=payload,
+        args=args,
+        handler=handle_gmail_read_sync,
+        empty_query_message="Señor, ¿qué correos desea que revise?",
+        failure_prefix="No pude consultar su correo",
+    )
+
+
+async def execute_gmail_prepare_send_tool(
+    *,
+    user_id: str,
+    payload: dict[str, Any],
+    args: dict[str, Any],
+) -> dict[str, Any]:
+    return await _execute_native_finance_action_tool(
+        tool_name="gmail_prepare_send",
+        user_id=user_id,
+        payload=payload,
+        args=args,
+        handler=_run_gmail_prepare,
+    )
+
+
+async def execute_gmail_confirm_send_tool(
+    *,
+    user_id: str,
+    payload: dict[str, Any],
+    args: dict[str, Any],
+) -> dict[str, Any]:
+    return await _execute_native_finance_action_tool(
+        tool_name="gmail_confirm_send",
+        user_id=user_id,
+        payload=payload,
+        args=args,
+        handler=_run_gmail_confirm,
+    )
+
+
+async def execute_gmail_cancel_send_tool(
+    *,
+    user_id: str,
+    payload: dict[str, Any],
+    args: dict[str, Any],
+) -> dict[str, Any]:
+    return await _execute_native_finance_action_tool(
+        tool_name="gmail_cancel_send",
+        user_id=user_id,
+        payload=payload,
+        args=args,
+        handler=_run_gmail_cancel,
     )
 
 

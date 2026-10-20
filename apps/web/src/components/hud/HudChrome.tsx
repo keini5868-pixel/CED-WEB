@@ -19,6 +19,7 @@ import {
   AUTOMATION_PATH,
   COMMUNITY_PATH,
   DASHBOARD_PATH,
+  MAIL_PATH,
   SENTINEL_PATH,
 } from "@/lib/auth/paths";
 import {
@@ -83,6 +84,7 @@ export function HudChrome({ email, isSuperAdmin }: HudChromeProps) {
       align="left"
       tone="navy"
       items={[
+        { id: "correo", label: "Correo", href: MAIL_PATH },
         { id: "plans", label: "Planes", href: "/dashboard/plans" },
         {
           id: "sentinel",

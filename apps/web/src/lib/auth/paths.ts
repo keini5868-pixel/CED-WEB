@@ -6,6 +6,7 @@ export const TEAM_PATH = "/dashboard/mi-equipo";
 export const COMMUNITY_PATH = "/dashboard/comunidad";
 export const AUTOMATION_PATH = "/dashboard/automatizacion";
 export const SENTINEL_PATH = "/dashboard/sentinel";
+export const MAIL_PATH = "/dashboard/correo";
 export const DRIVE_PATH = "/drive";
 export const ADMIN_PATH = "/admin";
 export const LOGIN_PATH = "/login";

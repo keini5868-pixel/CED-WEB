@@ -2502,3 +2502,55 @@ def consume_sentinel_seal_credit(user_id: str) -> dict[str, Any]:
         logger.exception("[DB] consume_sentinel_seal_credit failed user=%s", user_id)
         return {"ok": False, "code": "db_error", "error": "No pude registrar el sello."}
     return {"ok": True, "seals_used_in_period": new_used}
+
+
+def get_gmail_tokens(user_id: str) -> dict[str, Any] | None:
+    try:
+        from app.services.user_id_utils import normalize_user_id
+
+        uid = normalize_user_id(user_id)
+        result = (
+            _client()
+            .table("gmail_tokens")
+            .select("access_token, refresh_token, expires_at, connected_at")
+            .eq("user_id", uid)
+            .limit(1)
+            .execute()
+        )
+        rows = result.data or []
+        return rows[0] if rows else None
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("[DB] get_gmail_tokens failed user=%s err=%s", str(user_id)[:8], exc)
+        return None
+
+
+def get_calendar_tokens(user_id: str) -> dict[str, Any] | None:
+    try:
+        from app.services.user_id_utils import normalize_user_id
+
+        uid = normalize_user_id(user_id)
+        result = (
+            _client()
+            .table("calendar_tokens")
+            .select("access_token, refresh_token, expires_at, connected_at")
+            .eq("user_id", uid)
+            .limit(1)
+            .execute()
+        )
+        rows = result.data or []
+        return rows[0] if rows else None
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("[DB] get_calendar_tokens failed user=%s err=%s", str(user_id)[:8], exc)
+        return None
+
+
+def upsert_gmail_tokens(user_id: str, data: dict[str, Any]) -> dict[str, Any]:
+    from app.services.supabase_client import save_gmail_tokens
+
+    return save_gmail_tokens(user_id, data)
+
+
+def upsert_calendar_tokens(user_id: str, data: dict[str, Any]) -> dict[str, Any]:
+    from app.services.supabase_client import save_calendar_tokens
+
+    return save_calendar_tokens(user_id, data)

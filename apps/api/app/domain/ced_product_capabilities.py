@@ -58,7 +58,7 @@ Notas honestas:
 - Publicar en redes requiere Meta conectado en el dashboard.
 - Video (Veo 3 + edición): piloto en desarrollo. Abrir módulo VIDEO en el dashboard (?videoEditModule=pilot). Usa tokens de video (no el saldo de voz). Shotstack + Text→SFX; Veo 3 Lite solo cuando el flag de producto lo permita. No prometas render Veo completo si el piloto aún no lo dispara.
 - WhatsApp es Cloud API (número de negocio en el dashboard), no el chat personal ni Telegram. No se dispara por voz.
-- No integra Google Calendar/email; sí calendarios de contenido y recordatorios HUD."""
+- No integra Google Calendar. Sí lee y responde Gmail cuando el usuario conecta Gmail y confirma el envío."""
 
 # Resumen oral corto — voz / piloto Retell (máx. 5 puntos por turno; ofrecer ampliar).
 CED_CAPABILITY_ORAL_SUMMARY = """
@@ -73,7 +73,7 @@ WhatsApp Business: solo el módulo del dashboard (número Cloud API + flujos); n
 Cuando mencionen video/Veo/editar MP4: di con orgullo que Keini y CED están construyendo esa línea —
 módulo VIDEO en el dashboard (piloto), tokens de video, edición con cortes/SFX; Veo 3 en el pipeline
 cuando el producto lo habilite. NO inventes que ya renderizas Veo desde la voz sin el módulo.
-PROHIBIDO inventar mensajería de terceros (Telegram, SMS, WhatsApp personal), Ads Manager, email o Google Calendar.
+PROHIBIDO inventar mensajería de terceros (Telegram, SMS, WhatsApp personal), Ads Manager o Google Calendar. Gmail sí está: leer y responder si el usuario lo conectó y confirma el envío.
 Tras generar imagen: NO ofrezcas publicar salvo que lo pidan.
 """.strip()
 

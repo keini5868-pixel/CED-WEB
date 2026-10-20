@@ -1140,3 +1140,119 @@ def clear_advanced_mode_for_call(user_id: str, call_id: str = "") -> None:
     set_advanced_mode_active(user_id, False)
     clear_fitline_guide(user_id)
 
+
+def set_gmail_inbox_cache(user_id: str, messages: list[dict[str, Any]]) -> None:
+    session = _get(user_id)
+    with _lock:
+        session["gmail_inbox_cache"] = deepcopy(messages or [])
+        session["updated_at"] = _now()
+
+
+def get_gmail_inbox_cache(user_id: str) -> list[dict[str, Any]]:
+    rows = _get(user_id).get("gmail_inbox_cache")
+    return deepcopy(rows) if isinstance(rows, list) else []
+
+
+def set_gmail_awaiting_pick(user_id: str, awaiting: bool) -> None:
+    session = _get(user_id)
+    with _lock:
+        session["gmail_awaiting_pick"] = bool(awaiting)
+        if not awaiting:
+            session["gmail_inbox_cache"] = []
+        session["updated_at"] = _now()
+
+
+def is_gmail_awaiting_pick(user_id: str) -> bool:
+    return bool(_get(user_id).get("gmail_awaiting_pick"))
+
+
+def set_gmail_last_read(user_id: str, message: dict[str, Any] | None) -> None:
+    session = _get(user_id)
+    with _lock:
+        session["gmail_last_read"] = deepcopy(message) if message and message.get("id") else None
+        session["updated_at"] = _now()
+
+
+def get_gmail_last_read(user_id: str) -> dict[str, Any] | None:
+    row = _get(user_id).get("gmail_last_read")
+    if not isinstance(row, dict) or not row.get("id"):
+        return None
+    return deepcopy(row)
+
+
+GMAIL_PENDING_TTL_SEC = 600
+
+
+def set_gmail_pending_send(user_id: str, draft: dict[str, Any]) -> None:
+    session = _get(user_id)
+    now = _now()
+    row = deepcopy(draft)
+    row["prepared_at"] = now
+    row["expires_at"] = now + GMAIL_PENDING_TTL_SEC
+    with _lock:
+        session["gmail_pending_send"] = row
+        session["updated_at"] = now
+
+
+def get_gmail_pending_send(user_id: str) -> dict[str, Any] | None:
+    row = _get(user_id).get("gmail_pending_send")
+    if not isinstance(row, dict):
+        return None
+    return deepcopy(row)
+
+
+def is_gmail_pending_send_expired(user_id: str) -> bool:
+    row = _get(user_id).get("gmail_pending_send")
+    if not isinstance(row, dict):
+        return False
+    expires = float(row.get("expires_at") or 0)
+    return expires > 0 and _now() > expires
+
+
+def clear_gmail_pending_send(user_id: str, *, reason: str = "") -> None:
+    session = _get(user_id)
+    with _lock:
+        session["gmail_pending_send"] = None
+        session["updated_at"] = _now()
+    if reason:
+        logger = __import__("logging").getLogger(__name__)
+        logger.info("[GMAIL] pending cleared user=%s reason=%s", user_id[:8], reason)
+
+
+def try_mark_gmail_pending_sending(user_id: str, draft_id: str) -> bool:
+    session = _get(user_id)
+    with _lock:
+        row = session.get("gmail_pending_send")
+        if not isinstance(row, dict):
+            return False
+        if str(row.get("draft_id") or "") != draft_id:
+            return False
+        if str(row.get("status") or "") != "pending":
+            return False
+        row["status"] = "sending"
+        session["gmail_pending_send"] = row
+        session["updated_at"] = _now()
+        return True
+
+
+def mark_gmail_pending_sent(user_id: str, *, message_id: str = "") -> None:
+    session = _get(user_id)
+    with _lock:
+        row = session.get("gmail_pending_send")
+        if not isinstance(row, dict):
+            return
+        row["status"] = "sent"
+        row["sent_message_id"] = message_id or None
+        session["gmail_pending_send"] = row
+        session["updated_at"] = _now()
+
+
+def revert_gmail_pending_to_pending(user_id: str) -> None:
+    session = _get(user_id)
+    with _lock:
+        row = session.get("gmail_pending_send")
+        if isinstance(row, dict) and row.get("status") == "sending":
+            row["status"] = "pending"
+            session["gmail_pending_send"] = row
+            session["updated_at"] = _now()
+

@@ -17,6 +17,13 @@ const META_TOAST: Record<string, string> = {
   invalid_state: "La conexión de Instagram expiró. Vuelva a pulsar Conectar Redes.",
 };
 
+const GMAIL_TOAST: Record<string, string> = {
+  connected: "Gmail conectado. CED ya puede leer y responder con tu confirmación.",
+  error: "No se pudo conectar Gmail. Inténtelo de nuevo.",
+  scope_read: "Falta permiso para leer el correo. Vuelva a conectar Gmail y acéptelo.",
+  scope_send: "Falta permiso para enviar. Vuelva a conectar Gmail y acepte el envío.",
+};
+
 /** Muestra toast tras redirect OAuth (?meta=connected). */
 export function MetaOAuthCallbackBanner() {
   const searchParams = useSearchParams();
@@ -25,17 +32,22 @@ export function MetaOAuthCallbackBanner() {
 
   useEffect(() => {
     const meta = searchParams.get("meta");
-    if (!meta) return;
-    setMessage(META_TOAST[meta] ?? `Resultado Meta: ${meta}`);
-    if (meta === "connected") {
-      window.dispatchEvent(new Event(META_CONNECTED_EVENT));
+    const gmail = searchParams.get("gmail");
+    if (!meta && !gmail) return;
+    if (meta) {
+      setMessage(META_TOAST[meta] ?? `Resultado Meta: ${meta}`);
+      if (meta === "connected") {
+        window.dispatchEvent(new Event(META_CONNECTED_EVENT));
+      }
+    } else if (gmail) {
+      setMessage(GMAIL_TOAST[gmail] ?? `Resultado Gmail: ${gmail}`);
     }
     router.replace("/dashboard", { scroll: false });
   }, [searchParams, router]);
 
   if (!message) return null;
 
-  const ok = message.includes("correctamente");
+  const ok = /conectad/i.test(message);
   return (
     <div
       className={[
@@ -97,3 +109,4 @@ export function ConnectNetworksButton() {
     </div>
   );
 }
+

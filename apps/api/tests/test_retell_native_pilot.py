@@ -75,6 +75,10 @@ def test_build_native_pilot_tools_includes_read_and_finance_write():
         "stop_drive_navigation",
         "navigation_status",
         "read_finances",
+        "read_gmail",
+        "gmail_prepare_send",
+        "gmail_confirm_send",
+        "gmail_cancel_send",
         "finance_prepare_write",
         "finance_confirm_write",
         "finance_cancel_write",
@@ -87,10 +91,6 @@ def test_build_native_pilot_tools_includes_read_and_finance_write():
         "deactivate_advanced_mode",
     }
     assert required <= names
-    assert not any(
-        n.startswith(("gmail_", "calendar_")) or n in {"read_gmail", "list_calendar_events"}
-        for n in names
-    )
 
 
 def test_camera_tools_have_fillers_and_timeouts():
