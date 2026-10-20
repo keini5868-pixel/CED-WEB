@@ -28,7 +28,11 @@ function matchesPrefix(pathname: string, prefixes: readonly string[]) {
  */
 function redirectAuthCodeIfNeeded(request: NextRequest): NextResponse | null {
   const pathname = request.nextUrl.pathname;
-  if (pathname.startsWith("/auth/callback") || pathname.startsWith("/api/")) {
+  if (
+    pathname.startsWith("/auth/callback") ||
+    pathname.startsWith("/auth/google/") ||
+    pathname.startsWith("/api/")
+  ) {
     return null;
   }
   const code = request.nextUrl.searchParams.get("code");
